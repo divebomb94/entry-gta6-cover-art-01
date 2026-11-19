@@ -87,7 +87,7 @@ export function box(w, h, d) {
   }
   return finish(g);
 }
-export function cylinder(rTop, rBottom, h, radialSegs=14, openEnded=false) {
+export function cylinder(rTop, rBottom, h, radialSegs=20, openEnded=false) {
   const g=mesh(), n=segments(radialSegs,3), slope=h ? (rBottom-rTop)/h : 0;
   for (let row=0; row<2; row++) for (let j=0; j<=n; j++) {
     const t=j/n*TAU, c=Math.cos(t), s=Math.sin(t), r=row ? rTop : rBottom;
@@ -113,7 +113,7 @@ export function cylinder(rTop, rBottom, h, radialSegs=14, openEnded=false) {
   }
   return finish(g);
 }
-export function sphere(r, wSegs=18, hSegs=14) {
+export function sphere(r, wSegs=26, hSegs=19) {
   const g=mesh(), w=segments(wSegs,3), h=segments(hSegs,2);
   for (let i=0; i<=h; i++) for (let j=0; j<=w; j++) {
     const v=i/h, u=j/w, phi=v*Math.PI, theta=u*TAU;
@@ -127,7 +127,7 @@ export function sphere(r, wSegs=18, hSegs=14) {
   }
   return finish(g);
 }
-export function lathe(profile, segs=20) {
+export function lathe(profile, segs=28) {
   // Profile runs bottom to top; negative radii are unsupported. Ends remain open.
   const g=mesh(), n=segments(segs,3), count=profile.length;
   if (count<2) return finish(g);
@@ -153,6 +153,37 @@ export function lathe(profile, segs=20) {
   }
   return finish(g);
 }
+export function profileTube(rings, segs=28) {
+  const g=mesh(), n=segments(segs,3), count=rings.length;
+  if (count<2) return finish(g);
+  const direction=rings[count-1][0] >= rings[0][0] ? 1 : -1;
+  const lengths=[0], edgeNormals=[];
+  const ringData=rings.map(([y,r,sx=1,sz=1])=>({y,r,sx,sz,effR:r*Math.sqrt(sx*sz)}));
+  for (let i=1; i<count; i++) {
+    const prev=ringData[i-1], curr=ringData[i];
+    const dr=curr.effR-prev.effR, dy=curr.y-prev.y;
+    lengths.push(lengths[i-1]+Math.hypot(dr,dy));
+    const len=Math.hypot(dr,dy) || 1;
+    edgeNormals.push([dy/len*direction,-dr/len*direction]);
+  }
+  for (let i=0; i<count; i++) {
+    const a=edgeNormals[Math.max(0,i-1)], b=edgeNormals[Math.min(count-2,i)];
+    const sn=unit([a[0]+b[0],a[1]+b[1],0]);
+    const {y,r,sx,sz}=ringData[i];
+    for (let j=0; j<=n; j++) {
+      const t=j/n*TAU, c=Math.cos(t), s=Math.sin(t);
+      vertex(g,[r*sx*c,y,r*sz*s],
+        unit([sn[0]*c/(sx || 1),sn[1],sn[0]*s/(sz || 1)]),
+        [j/n,lengths[i]/(lengths[count-1] || 1)]);
+    }
+  }
+  for (let i=0; i<count-1; i++) for (let j=0; j<n; j++) {
+    const a=i*(n+1)+j, b=a+n+1;
+    if (direction>0) g.indices.push(a,b,a+1,a+1,b,b+1);
+    else g.indices.push(a,a+1,b,a+1,b+1,b);
+  }
+  return finish(g);
+}
 export function plane(w, h) {
   const g=mesh();
   [[-w/2,-h/2,0],[w/2,-h/2,0],[w/2,h/2,0],[-w/2,h/2,0]].forEach((p,i)=>
@@ -160,7 +191,7 @@ export function plane(w, h) {
   g.indices.push(0,1,2,0,2,3);
   return finish(g);
 }
-export function torus(r, tube, radialSegs=10, tubularSegs=20) {
+export function torus(r, tube, radialSegs=12, tubularSegs=28) {
   // Ring lies in XY, with the hole along Z.
   const g=mesh(), rows=segments(radialSegs,3), cols=segments(tubularSegs,3);
   for (let i=0; i<=rows; i++) for (let j=0; j<=cols; j++) {
@@ -175,7 +206,7 @@ export function torus(r, tube, radialSegs=10, tubularSegs=20) {
   }
   return finish(g);
 }
-export function disc(r, segs=24) {
+export function disc(r, segs=32) {
   const g=mesh(), n=segments(segs,3);
   vertex(g,[0,0,0],[0,0,1],[0.5,0.5]);
   for (let j=0; j<=n; j++) {
@@ -183,6 +214,49 @@ export function disc(r, segs=24) {
     vertex(g,[r*c,r*s,0],[0,0,1],[0.5+c/2,0.5+s/2]);
   }
   for (let j=0; j<n; j++) g.indices.push(0,j+1,j+2);
+  return finish(g);
+}
+
+export function xform(geo, opts={}) {
+  const p=opts.p || [0,0,0], r=opts.r || [0,0,0];
+  const scale=opts.s ?? 1, s=typeof scale==='number' ? [scale,scale,scale] : scale;
+  let m=mat4Translate(mat4Identity(),...p);
+  m=mat4RotateX(m,r[0]); m=mat4RotateY(m,r[1]);
+  m=mat4RotateZ(m,r[2]); m=mat4Scale(m,...s);
+  const a=[m[0],m[1],m[2]], b=[m[4],m[5],m[6]], c=[m[8],m[9],m[10]];
+  const nx=cross(b,c), ny=cross(c,a), nz=cross(a,b), det=dot(a,nx);
+  const invDet=Math.abs(det)>1e-12 ? 1/det : 1;
+  const positions=new Float32Array(geo.positions.length);
+  for (let i=0; i<geo.positions.length; i+=3) {
+    const x=geo.positions[i], y=geo.positions[i+1], z=geo.positions[i+2];
+    positions[i]=m[0]*x+m[4]*y+m[8]*z+m[12];
+    positions[i+1]=m[1]*x+m[5]*y+m[9]*z+m[13];
+    positions[i+2]=m[2]*x+m[6]*y+m[10]*z+m[14];
+  }
+  const normals=new Float32Array(geo.normals.length);
+  for (let i=0; i<geo.normals.length; i+=3) {
+    const x=geo.normals[i], y=geo.normals[i+1], z=geo.normals[i+2];
+    const normal=unit([
+      (nx[0]*x+ny[0]*y+nz[0]*z)*invDet,
+      (nx[1]*x+ny[1]*y+nz[1]*z)*invDet,
+      (nx[2]*x+ny[2]*y+nz[2]*z)*invDet
+    ]);
+    normals.set(normal,i);
+  }
+  return {positions,normals,uvs:new Float32Array(geo.uvs),
+    colors:geo.colors ? new Float32Array(geo.colors) : null,indices:new Uint16Array(geo.indices)};
+}
+export function merge(geos) {
+  const g=mesh();
+  for (const geo of geos) {
+    const offset=g.positions.length/3;
+    if (offset+geo.positions.length/3>65536)
+      throw new RangeError('Merged geometry exceeds WebGL1 Uint16 vertex limit');
+    for (const value of geo.positions) g.positions.push(value);
+    for (const value of geo.normals) g.normals.push(value);
+    for (const value of geo.uvs) g.uvs.push(value);
+    for (const index of geo.indices) g.indices.push(index+offset);
+  }
   return finish(g);
 }
 
@@ -221,7 +295,7 @@ varying vec2 vUV;
 varying vec3 vColor;
 uniform vec3 uEye, uLightDir, uLightColor, uSkyColor, uGroundColor;
 uniform vec3 uRimColor, uFogColor, uColor, uEmissive;
-uniform float uAmbient, uFogDensity, uAlpha, uBand, uRimBoost;
+uniform float uAmbient, uFogDensity, uAlpha, uBand, uRimBoost, uWrap, uSpecMul;
 uniform bool uHasTexture, uVertexColors, uUnlit;
 uniform sampler2D uTexture;
 void main() {
@@ -233,15 +307,16 @@ void main() {
   if (!uUnlit) {
     vec3 n = normalize(vNormal);
     vec3 viewDir = normalize(uEye - vPosition);
-    float diffuse = max(dot(n, uLightDir), 0.0);
+    float nd = dot(n, uLightDir);
+    float diffuse = clamp((nd + uWrap) / (1.0 + uWrap), 0.0, 1.0);
     if (uBand > 0.0) {
       float bands = max(1.0, uBand);
       float banded = floor(diffuse * bands + 0.5) / bands;
-      diffuse = mix(diffuse, banded, 0.7);
+      diffuse = mix(diffuse, banded, 0.45);
     }
     vec3 hemi = mix(uGroundColor, uSkyColor, n.y * 0.5 + 0.5);
     vec3 halfDir = normalize(uLightDir + viewDir);
-    float spec = pow(max(dot(n, halfDir), 0.0), 24.0) * 0.25;
+    float spec = pow(max(dot(n, halfDir), 0.0), 24.0) * 0.25 * uSpecMul;
     spec *= step(0.0001, dot(n, uLightDir));
     float rim = pow(1.0 - abs(dot(n, viewDir)), 3.0) * uRimBoost;
     result = base * (hemi * uAmbient + uLightColor * diffuse)
@@ -279,7 +354,7 @@ function programFor(gl) {
     attributes[name]=gl.getAttribLocation(program,`a${name}`);
   for (const name of ['World','ViewProjection','NormalMatrix','Eye','LightDir','LightColor',
     'SkyColor','GroundColor','RimColor','FogColor','Color','Emissive','Ambient','FogDensity',
-    'Alpha','Band','RimBoost','HasTexture','VertexColors','Unlit','Texture'])
+    'Alpha','Band','RimBoost','Wrap','SpecMul','HasTexture','VertexColors','Unlit','Texture'])
     uniforms[name]=gl.getUniformLocation(program,`u${name}`);
   const result={program,attributes,uniforms};
   programs.set(gl,result);
@@ -398,6 +473,7 @@ export function createRenderer(canvas) {
       vec('Color',m.color || [1,1,1]); vec('Emissive',m.emissive || [0,0,0]);
       gl.uniform1f(u.Alpha,m.alpha ?? 1); gl.uniform1f(u.Band,m.band ?? 0);
       gl.uniform1f(u.RimBoost,m.rimBoost ?? 1);
+      gl.uniform1f(u.Wrap,m.wrap ?? 0); gl.uniform1f(u.SpecMul,m.specMul ?? 1);
       gl.uniform1i(u.Unlit,!!m.unlit); gl.uniform1i(u.VertexColors,!!m.vertexColors);
       gl.uniform1i(u.HasTexture,!!m.tex);
       if (m.tex) textureFor(m);

@@ -1,4 +1,4 @@
-import { node, group, box, cylinder, sphere, lathe, torus } from './gl3d.js';
+import { node, group, box, cylinder, sphere, lathe, torus, profileTube, xform, merge } from './gl3d.js';
 
 const SKIN = { her: [0.98, 0.76, 0.60], him: [0.87, 0.62, 0.45] };
 const pigment = (color, rimBoost = 1) => ({ color, band: 5, rimBoost });
@@ -6,7 +6,7 @@ const gold = { color: [1, 0.69, 0.22], rimBoost: 2.4, emissive: [0.08, 0.035, 0.
 const fabric = { color: [1, 1, 1], band: 5, rimBoost: 1.1 };
 const MAT = {
   skin: { her: pigment(SKIN.her, 1.2), him: pigment(SKIN.him, 1.2) },
-  lip: { her: pigment([0.62, 0.16, 0.18]), him: pigment([0.55, 0.30, 0.26]) },
+  lip: { her: pigment([0.62, 0.16, 0.18]), him: pigment([0.696, 0.3472, 0.2385]) },
   hair: { her: pigment([0.11, 0.06, 0.05], 0.6), him: pigment([0.07, 0.05, 0.04], 0.6) },
   gold,
   gunmetal: { color: [0.15, 0.17, 0.22], rimBoost: 1.8 },
@@ -17,9 +17,14 @@ const MAT = {
   dress: { ...fabric, band: 3 },
   tank: { ...fabric },
 };
+for (const key of ['her', 'him']) {
+  Object.assign(MAT.skin[key], { band: 0, wrap: 0.38, specMul: 0.75 });
+  Object.assign(MAT.lip[key], { specMul: 1.5, wrap: 0.25 });
+}
 const INK = '#20303a';
 const TEAL = '#315d5b';
 const TAU = 2 * Math.PI;
+const HEAD = 0.247;
 
 function makeCanvas(w, h, drawFn) {
   const canvas = document.createElement('canvas');
@@ -151,10 +156,14 @@ function sleeveTattooTexture(tone = SKIN.her) {
 }
 
 function chestTattooTexture(tone = SKIN.him) {
-  return makeCanvas(512, 512, ctx => {
+  return makeCanvas(512, 512, (ctx, w, h) => {
     paintSkin(ctx, tone);
     // Front is U = 0.25. Arc-length V and the flipped canvas upload map
     // chest y=1.392–1.502 to canvas rows ~356–193.
+    ctx.save();
+    ctx.translate(w * 0.50, h * 0.44);
+    ctx.scale(0.55, 0.55);
+    ctx.translate(-w * 0.50, -h * 0.44);
     ctx.translate(0, 153);
     const x = 128;
     const y = 106;
@@ -178,6 +187,7 @@ function chestTattooTexture(tone = SKIN.him) {
       ctx.bezierCurveTo(160, 157, 199, 100, 221, 129);
     });
     star(ctx, x, 167, 12);
+    ctx.restore();
   });
 }
 
@@ -197,7 +207,112 @@ function tankTexture() {
     }
     ctx.fillStyle = '#fff4e2';
     ctx.fillRect(0, 0, w, 7);
+    for (let i = 0; i < 7; i++) {
+      const x = 14 + i * (w - 28) / 6;
+      const dark = i % 2 === 0;
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineWidth = dark ? 3 + i % 4 : 3 + (i + 1) % 4;
+      ctx.strokeStyle = dark ? 'rgba(0,40,40,0.10)' : 'rgba(255,255,255,0.06)';
+      for (let segment = 0; segment < 3; segment++) {
+        const y0 = h * (0.50 + segment * 0.48 / 3);
+        const y1 = h * (0.50 + (segment + 1) * 0.48 / 3);
+        const middle = (y0 + y1) / 2;
+        ctx.globalAlpha = [0.25, 0.50, 0.78][segment];
+        ctx.beginPath();
+        ctx.moveTo(x + Math.sin(i * 1.3 + segment * 0.8) * 1.5, y0);
+        ctx.quadraticCurveTo(x + Math.sin(i * 1.3 + segment * 0.8 + 0.7) * 3,
+          middle, x + Math.sin(i * 1.3 + (segment + 1) * 0.8) * 1.5, y1);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
   });
+}
+
+function toneRGB(tone, scale = 1) {
+  return tone.map(c => Math.min(255, Math.round(c * scale * 255))).join(',');
+}
+
+function textureRandom(seed) {
+  return () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed / 0x100000000;
+  };
+}
+
+function skinTexture(tone) {
+  const random = textureRandom(31);
+  return makeCanvas(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = `rgb(${toneRGB(tone)})`;
+    ctx.fillRect(0, 0, w, h);
+    const dots = (count, minRadius, maxRadius, variation, alpha) => {
+      for (let i = 0; i < count; i++) {
+        const x = random() * w, y = random() * h;
+        const r = minRadius + random() * (maxRadius - minRadius);
+        const color = toneRGB(tone, 1 + (i % 2 ? variation : -variation));
+        const fade = ctx.createRadialGradient(x, y, 0, x, y, r);
+        fade.addColorStop(0, `rgba(${color},${alpha})`);
+        fade.addColorStop(1, `rgba(${color},0)`);
+        ctx.fillStyle = fade;
+        ctx.fillRect(x - r, y - r, 2 * r, 2 * r);
+      }
+    };
+    dots(14, 30, 70, 0.03, 0.04);
+    dots(700, 1, 3, 0.05, 0.05);
+  });
+}
+
+function hairTexture(base) {
+  const random = textureRandom(79);
+  return makeCanvas(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = `rgb(${toneRGB(base)})`;
+    ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 90; i++) {
+      const x = (i + random()) * w / 90;
+      const wave = 2 + random() * 7;
+      const color = `rgba(${toneRGB(base, i % 2 ? 1.25 : 0.72)},0.5)`;
+      stroke(ctx, color, 1.5 + random() * 1.5, () => {
+        ctx.moveTo(x, 0);
+        ctx.bezierCurveTo(x + wave, h / 3, x - wave, 2 * h / 3, x, h);
+      });
+    }
+    const shade = ctx.createLinearGradient(0, 0, 0, h);
+    shade.addColorStop(0, 'rgba(0,0,0,0)');
+    shade.addColorStop(1, 'rgba(0,0,0,0.22)');
+    ctx.fillStyle = shade;
+    ctx.fillRect(0, 0, w, h);
+  });
+}
+
+function stubbleTexture(tone) {
+  const random = textureRandom(113);
+  const dots = makeCanvas(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = `rgba(${toneRGB(tone, 0.45)},0.35)`;
+    ctx.beginPath();
+    for (let i = 0; i < 2600; i++) {
+      const x = random() * w, y = random() * h;
+      const r = 0.65 + random() * 0.7;
+      ctx.moveTo(x + r, y);
+      ctx.arc(x, y, r, 0, TAU);
+    }
+    ctx.fill();
+    const mask = ctx.createLinearGradient(0, 0, 0, h);
+    mask.addColorStop(0, 'rgba(0,0,0,0)');
+    mask.addColorStop(1, 'rgba(0,0,0,1)');
+    ctx.globalCompositeOperation = 'destination-in';
+    ctx.fillStyle = mask;
+    ctx.fillRect(0, 0, w, h);
+  });
+  return makeCanvas(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = `rgb(${toneRGB(tone, 0.92)})`;
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(dots, 0, 0);
+  });
+}
+
+if (typeof document !== 'undefined') {
+  for (const key of ['her', 'him']) MAT.skin[key].tex = skinTexture(SKIN[key]);
 }
 
 function dressTexture() {
@@ -217,6 +332,32 @@ function dressTexture() {
     ctx.fillRect(0, 0, w, h);
     ctx.fillStyle = '#ffe091';
     ctx.fillRect(0, 12, w, 3);
+
+    for (let i = 0; i < 11; i++) {
+      const x = 10 + i * (w - 20) / 10;
+      const dark = i % 2 === 0;
+      const width = dark ? 5 + (i * 3) % 5 : 3 + (i * 2) % 3;
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineWidth = width;
+      ctx.strokeStyle = dark ? 'rgba(60,0,40,0.15)' : 'rgba(255,180,220,0.08)';
+      if (dark) {
+        ctx.shadowColor = 'rgba(60,0,40,0.10)';
+        ctx.shadowBlur = 6;
+      }
+      for (let segment = 0; segment < 3; segment++) {
+        const y0 = h * (0.30 + segment * 0.68 / 3);
+        const y1 = h * (0.30 + (segment + 1) * 0.68 / 3);
+        const middle = (y0 + y1) / 2;
+        ctx.globalAlpha = [0.24, 0.48, 0.78][segment];
+        ctx.beginPath();
+        ctx.moveTo(x + Math.sin(i * 1.7 + segment * 0.7) * 2, y0);
+        ctx.quadraticCurveTo(x + Math.sin(i * 1.7 + segment * 0.7 + 0.8) * 4,
+          middle, x + Math.sin(i * 1.7 + (segment + 1) * 0.7) * 2, y1);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
   });
 }
 
@@ -232,24 +373,53 @@ function joint(parent, p) {
   return child;
 }
 
-function buildFace({ skin, lip, hair, brow }) {
+function buildFace({ skin, lip, hair, brow, jawMat }) {
   const head = group();
   const eye = pigment([0.075, 0.036, 0.025]);
+  const white = { color: [0.88, 0.855, 0.83], wrap: 0.3, specMul: 1.6 };
+  const iris = { color: [0.14, 0.08, 0.045] };
+  const pupil = { color: [0.018, 0.012, 0.009] };
   const glint = { color: [1, 1, 1], emissive: [1, 1, 1] };
   const nose = { ...skin, color: skin.color.map(v => v * 0.97) };
-  part(head, sphere(0.5, 48, 32), skin, [0, 0, 0], [0.92, 1.08, 0.98]);
-  part(head, sphere(0.34, 32, 24), skin, [0, -0.30, 0.06], [0.92, 0.8, 0.9]);
-  part(head, sphere(0.072), nose, [0, -0.03, 0.465], [0.82, 1.3, 0.95]);
-  part(head, box(0.11, 0.04, 0.05), nose, [0, -0.125, 0.45]);
-  for (const side of [-1, 1]) {
-    part(head, sphere(0.060), eye, [side * 0.168, 0.05, 0.44], [1, 0.72, 0.55]);
-    part(head, box(0.13, 0.018, 0.02), eye, [side * 0.168, 0.115, 0.45]);
-    part(head, sphere(0.016), glint, [side * 0.155, 0.073, 0.474]);
-    part(head, box(0.15, 0.036, 0.03), brow ?? hair,
-      [side * 0.168, 0.165, 0.47], undefined, [0, 0, -side * 0.12]);
-    part(head, sphere(0.075), skin, [side * 0.455, -0.02, 0], [0.5, 1, 0.75]);
+  const sides = [-1, 1];
+  const jaw = xform(sphere(0.34, 32, 22), { p: [0, -0.29, 0.05], s: [0.90, 0.80, 0.88] });
+  const sculpt = [
+    xform(sphere(0.5, 40, 28), { s: [0.92, 1.08, 0.98] }),
+    xform(sphere(0.115, 20, 14), { p: [0, -0.455, 0.14], s: [0.95, 0.72, 0.80] }),
+    xform(sphere(0.30, 28, 18), { p: [0, 0.115, 0.315], s: [1.02, 0.40, 0.55] }),
+    xform(sphere(0.038, 14, 10), {
+      p: [0, 0.036, 0.460], s: [0.70, 1.90, 0.68], r: [0.35, 0, 0],
+    }),
+  ];
+  for (const side of sides) {
+    sculpt.push(
+      xform(sphere(0.090, 20, 14), { p: [side * 0.228, -0.088, 0.322], s: [1.0, 0.68, 0.55] }),
+      xform(sphere(0.072, 14, 10), { p: [side * 0.452, -0.02, 0], s: [0.48, 0.95, 0.72] }),
+    );
   }
-  part(head, sphere(0.09), lip, [0, -0.255, 0.435], [1.35, 0.5, 0.55]);
+  if (!jawMat) sculpt.push(jaw);
+  part(head, merge(sculpt), skin);
+  if (jawMat) part(head, jaw, jawMat);
+  part(head, merge([
+    xform(sphere(0.042, 16, 12), { p: [0, -0.055, 0.470], s: [0.92, 1.02, 0.86] }),
+    xform(box(0.085, 0.030, 0.040), { p: [0, -0.115, 0.452] }),
+  ]), nose);
+  for (const side of sides) {
+    const x = side * 0.166;
+    part(head, sphere(0.008), eye, [side * 0.020, -0.120, 0.460]);
+    part(head, sphere(0.060, 20, 14), white, [x, 0.046, 0.427], [1.12, 0.66, 0.46]);
+    part(head, disc(0.033, 20), iris, [x, 0.048, 0.4585]);
+    part(head, disc(0.016, 14), pupil, [x, 0.048, 0.4605]);
+    part(head, sphere(0.0085), glint, [side * 0.154, 0.064, 0.456]);
+    part(head, box(0.12, 0.011, 0.016), eye,
+      [x, 0.084, 0.450], undefined, [0, 0, -side * 0.08]);
+    part(head, box(0.14, 0.022, 0.026), brow ?? hair,
+      [side * 0.168, 0.158, 0.460], undefined, [0, 0, -side * 0.10]);
+  }
+  part(head, sphere(0.072, 18, 12), lip, [0, -0.240, 0.426], [1.28, 0.36, 0.52]);
+  part(head, sphere(0.068, 18, 12), lip, [0, -0.278, 0.428], [1.16, 0.44, 0.56]);
+  part(head, box(0.085, 0.009, 0.012), { ...lip, color: lip.color.map(v => v * 0.55) },
+    [0, -0.259, 0.4525]);
   return head;
 }
 
@@ -270,16 +440,22 @@ function buildPistol() {
   return pistol;
 }
 
-// Limbs extend down local Y, so the lower radius belongs on the cylinder's bottom.
-function segment(parent, r, tip, len, material, jointMaterial = material) {
-  part(parent, sphere(r), jointMaterial, [0, 0, 0], [1, 0.92, 1]);
-  part(parent, cylinder(r * 0.95, tip, len, 24), material, [0, -len / 2, 0]);
+// Limbs extend down local Y, with muscle profiles blending into the joints.
+function segment(parent, r, tip, len, material, jointMaterial = material, bulge = 1.10) {
+  part(parent, sphere(r * 1.01), jointMaterial, [0, 0, 0], [1, 0.88, 1]);
+  part(parent, profileTube([
+    [0, r * 1.02, 0.96, 1.0],
+    [-0.18 * len, r * bulge, 0.96, 1.07],
+    [-0.45 * len, r * 0.94, 0.96, 1.0],
+    [-0.78 * len, r * 0.80, 0.96, 1.0],
+    [-len, tip, 0.96, 1.0],
+  ], 24), material, [0, 0, 0]);
   return joint(parent, [0, -len, 0]);
 }
 
-const upperArm = (parent, r, len, mat, skin) => segment(parent, r, r * 0.72, len, mat, skin);
+const upperArm = (parent, r, len, mat, skin) => segment(parent, r, r * 0.72, len, mat, skin, 1.13);
 const forearm = (parent, r, len, mat, skin) => segment(parent, r, r * 0.62, len, mat, skin);
-const thigh = (parent, r, len, mat) => segment(parent, r, r * 0.74, len, mat);
+const thigh = (parent, r, len, mat) => segment(parent, r, r * 0.74, len, mat, mat, 1.16);
 const shin = (parent, r, len, mat) => segment(parent, r, r * 0.63, len, mat);
 
 function makeArm(root, p, r, lengths, skin, sleeve, jewelry) {
@@ -294,7 +470,14 @@ function makeArm(root, p, r, lengths, skin, sleeve, jewelry) {
       part(el, box(0.025, 0.021, 0.008), MAT.gunmetal, [0, -lengths[1] + 0.022, r * 0.6]);
     }
   }
-  part(hand, sphere(r * 0.61), skin, [0, -0.025, 0], [0.94, 1.24, 0.85]);
+  const palm = joint(hand, [0, 0, 0]);
+  part(palm, sphere(r * 0.60), skin, [0, -0.030, 0], [0.88, 1.15, 0.48]);
+  for (const x of [-0.0285, -0.0095, 0.0095, 0.0285]) {
+    part(palm, cylinder(0.012, 0.0165, 0.058, 10), skin,
+      [x, -0.082, 0.006], undefined, [Math.PI + 0.38, 0, 0]);
+  }
+  part(palm, cylinder(0.011, 0.014, 0.042, 10), skin,
+    [0.030, -0.052, 0.012], undefined, [Math.PI + 0.5, 0, -0.5]);
   return { sh, el, hand };
 }
 
@@ -315,60 +498,62 @@ function makeLeg(hips, x, r, lowerR, lengths, mat, shoe, heel) {
   return { hip, knee, ankle };
 }
 
-function mountHead(root, face, y, scale) {
+function mountHead(root, face, y, scale, mountScale) {
   // The mount converts the one-unit face sculpt into body proportions.
   const mount = joint(root, [0, y, 0]);
-  mount.s = 0.29;
+  mount.s = mountScale;
   mount.children.push(face);
   face.s = scale;
 }
 
 function womanHair(head, hair) {
-  part(head, sphere(0.52, 32, 24), hair, [0, 0.05, -0.06], [0.95, 1.05, 1]);
-  part(head, sphere(0.35), hair, [0.03, 0.33, 0.08], [1.02, 0.5, 1.02], [0, 0, -0.30]);
+  const hairTex = { ...hair, tex: hairTexture(hair.color) };
+  part(head, sphere(0.53, 36, 24), hairTex, [0, 0.055, -0.045], [0.96, 1.07, 1.01]);
+  part(head, sphere(0.34, 28, 18), hairTex, [0.02, 0.35, 0.05], [1.05, 0.52, 1.05]);
+  part(head, sphere(0.30, 24, 16), hairTex, [-0.10, 0.330, 0.260], [0.90, 0.35, 0.60], [0, 0, 0.35]);
   const path = [[0.10, 0.40, -0.28], [-0.27, 0.25, -0.25], [-0.46, -0.02, 0.02],
     [-0.47, -0.31, 0.38], [-0.33, -0.62, 0.34]];
   part(head, torus(0.12, 0.018), gold, path[0], undefined, [Math.PI / 2, 0, 0]);
-  const radii = [0.115, 0.145, 0.119, 0.090, 0.025].map(r => r * 1.3);
+  const radii = [0.132, 0.167, 0.137, 0.104, 0.029].map(radius => radius * 0.85);
   for (let i = 0; i < 4; i++) {
     const a = path[i];
     const b = path[i + 1];
     const [dx, dy, dz] = b.map((v, j) => v - a[j]);
     const len = Math.hypot(dx, dy, dz);
-    part(head, sphere(radii[i]), hair, a);
-    part(head, cylinder(radii[i], radii[i + 1], len, 20), hair,
+    part(head, sphere(radii[i]), hairTex, a);
+    part(head, cylinder(radii[i], radii[i + 1], len, 20), hairTex,
       a.map((v, j) => (v + b[j]) / 2), undefined,
       [Math.atan2(-dz, -dy), 0, Math.asin(dx / len)]);
   }
-  part(head, sphere(radii[4]), hair, path[4], [1, 1.28, 1]);
+  part(head, sphere(radii[4]), hairTex, path[4], [1, 1.28, 1]);
 }
 
 function buildWoman() {
   const root = group();
   const skin = MAT.skin.her;
   const hair = MAT.hair.her;
-  const hips = joint(root, [0, 0.98, 0]);
-  const legs = [-1, 1].map(side => makeLeg(hips, side * 0.105, 0.085, 0.06,
-    [0.46, 0.44], skin, MAT.boots, true));
+  const hips = joint(root, [0, 1.00, 0]);
+  const legs = [-1, 1].map(side => makeLeg(hips, side * 0.098, 0.082, 0.056,
+    [0.50, 0.47], skin, MAT.boots, true));
   const dress = { ...MAT.dress, tex: dressTexture() };
-  part(hips, lathe([[0.26, -0.36], [0.247, -0.30], [0.224, -0.18], [0.216, -0.06],
-    [0.192, 0], [0.16, 0.04]], 40), dress, [0, 0, 0], [1, 1, 0.79]);
-  part(root, lathe([[0.16, 0.96], [0.16, 1.02], [0.143, 1.10], [0.156, 1.18],
-    [0.191, 1.28], [0.195, 1.33], [0.185, 1.38]], 40), dress, [0, 0, 0], [1, 1, 0.81]);
-  part(root, sphere(0.19), skin, [0, 1.372, 0], [1, 0.35, 0.80]);
-  part(root, cylinder(0.066, 0.086, 0.13), skin, [0, 1.445, 0]);
-  part(root, torus(0.085, 0.012), gold, [0, 1.44, 0.003], undefined, [1.32, 0, 0]);
-  part(root, sphere(0.018), gold, [0, 1.415, 0.087], [0.85, 1.25, 0.62]);
+  part(hips, lathe([[0.27, -0.42], [0.255, -0.33], [0.230, -0.20], [0.218, -0.08],
+    [0.196, 0.0], [0.168, 0.05], [0.160, 0.10]], 40), dress, [0, 0, 0], [1, 1, 0.80]);
+  part(root, lathe([[0.158, 1.00], [0.152, 1.08], [0.140, 1.16], [0.156, 1.24],
+    [0.178, 1.33], [0.199, 1.40], [0.190, 1.45], [0.168, 1.52], [0.128, 1.58],
+    [0.105, 1.615], [0.078, 1.650]], 40), dress, [0, 0, 0], [1, 1, 0.80]);
+  part(root, cylinder(0.056, 0.072, 0.13), skin, [0, 1.655, 0]);
+  part(root, torus(0.072, 0.008), gold, [0, 1.650, 0.003], undefined, [1.32, 0, 0]);
+  part(root, sphere(0.018), gold, [0, 1.622, 0.080], [0.85, 1.25, 0.62]);
   const head = buildFace({ skin, lip: MAT.lip.her, hair, brow: hair });
-  mountHead(root, head, 1.554, 0.96);
+  mountHead(root, head, 1.740, 0.96, 0.238);
   womanHair(head, hair);
   for (const side of [-1, 1]) {
     part(head, torus(0.035, 0.008), gold, [side * 0.461, -0.091, 0.025],
       [0.86, 1.18, 1], [0, side * 0.45, 0]);
   }
   const sleeve = { ...fabric, rimBoost: 1.2, tex: sleeveTattooTexture(SKIN.her) };
-  const armR = makeArm(root, [-0.24, 1.40, 0], 0.074, [0.245, 0.223], skin, sleeve);
-  const armL = makeArm(root, [0.24, 1.40, 0], 0.074, [0.245, 0.223], skin, skin, 'bracelet');
+  const armR = makeArm(root, [-0.215, 1.565, 0], 0.070, [0.27, 0.25], skin, sleeve);
+  const armL = makeArm(root, [0.215, 1.565, 0], 0.070, [0.27, 0.25], skin, skin, 'bracelet');
   // Keep leg controls available without changing the shared joints shape.
   hips.legs = legs;
   stance(hips, false, false);
@@ -379,47 +564,55 @@ function buildMan() {
   const root = group();
   const skin = MAT.skin.him;
   const hair = MAT.hair.him;
-  const hips = joint(root, [0, 0.98, 0]);
-  hips.legs = [-1, 1].map(side => makeLeg(hips, side * 0.115, 0.113, 0.083,
-    [0.46, 0.42], MAT.jeans, MAT.boots, false));
-  part(hips, sphere(0.217), MAT.jeans, [0, 0.015, 0], [1.07, 0.48, 0.75]);
+  const hips = joint(root, [0, 1.03, 0]);
+  hips.legs = [-1, 1].map(side => makeLeg(hips, side * 0.108, 0.088, 0.062,
+    [0.51, 0.48], MAT.jeans, MAT.boots, false));
+  part(hips, sphere(0.222), MAT.jeans, [0, 0.015, 0], [1.08, 0.50, 0.76]);
   const belt = pigment([0.08, 0.07, 0.09], 0.6);
   part(hips, lathe([[0.233, -0.025], [0.233, 0.065]], 40), belt,
     [0, 0, 0], [1, 1, 0.76]);
   part(hips, box(0.40, 0.09, 0.30), belt, [0, 0.02, 0.03]);
-  part(hips, box(0.09, 0.05, 0.02), gold, [0, 0.02, 0.185]);
+  part(hips, box(0.09, 0.05, 0.02), gold, [0, 0.02, 0.19]);
   const tank = { ...MAT.tank, tex: tankTexture() };
   const chest = { ...fabric, rimBoost: 1.2, tex: chestTattooTexture() };
-  part(root, lathe([[0.216, 0.98], [0.202, 1.06], [0.20, 1.15], [0.249, 1.24],
-    [0.266, 1.30]], 40), tank, [0, 0, 0], [1, 1, 0.76]);
-  part(root, lathe([[0.263, 1.28], [0.267, 1.30], [0.274, 1.392], [0.273, 1.459],
-    [0.245, 1.502], [0.107, 1.52]], 40), chest, [0, 0, 0], [1, 1, 0.76]);
+  part(root, lathe([[0.212, 1.03], [0.200, 1.12], [0.198, 1.22], [0.228, 1.34],
+    [0.252, 1.43], [0.258, 1.48]], 40), tank, [0, 0, 0], [1, 1, 0.77]);
+  part(root, lathe([[0.252, 1.46], [0.262, 1.52], [0.266, 1.58], [0.258, 1.63],
+    [0.228, 1.665], [0.110, 1.685], [0.095, 1.700], [0.082, 1.725]], 40), chest, [0, 0, 0], [1, 1, 0.77]);
   for (const side of [-1, 1]) {
-    part(root, box(0.116, 0.50, 0.06), MAT.shirt, [side * 0.212, 1.27, 0.134],
-      undefined, [0.09, side * 0.38, side * 0.14]);
-    part(root, box(0.105, 0.125, 0.037), MAT.shirt, [side * 0.211, 1.468, 0.165],
+    part(root, box(0.096, 0.52, 0.06), MAT.shirt, [side * 0.228, 1.40, 0.126],
+      undefined, [0.09, side * 0.38, side * 0.22]);
+    part(root, box(0.107, 0.13, 0.037), MAT.shirt, [side * 0.218, 1.60, 0.168],
       undefined, [-0.23, side * 0.30, -side * 0.36]);
+    part(root, sphere(0.105), chest, [side * 0.252, 1.615, 0], [1.05, 0.8, 1.0]);
   }
-  part(root, cylinder(0.087, 0.108, 0.155), skin, [0, 1.54, 0]);
-  const head = buildFace({ skin, lip: MAT.lip.him, hair, brow: hair });
-  part(head, sphere(0.36, 32, 24), skin, [0, -0.30, 0.06], [1.02, 0.85, 0.95]);
-  part(head, sphere(0.52, 32, 24), hair, [0, 0.20, -0.03], [0.99, 0.72, 1.0]);
-  part(head, box(0.34, 0.07, 0.06), hair, [0, 0.30, 0.42], undefined, [-0.3, 0, 0]);
-  mountHead(root, head, 1.663, 1.04);
+  part(root, cylinder(0.075, 0.095, 0.14), skin, [0, 1.715, 0]);
+  const jawMat = { ...skin, tex: stubbleTexture(SKIN.him) };
+  const head = buildFace({ skin, lip: MAT.lip.him, hair, brow: hair, jawMat });
+  const hairTex = { ...hair, tex: hairTexture(hair.color) };
+  const fade = { ...hair, color: hair.color.map(v => v * 0.8) };
+  part(head, sphere(0.525, 36, 24), hairTex, [0, 0.175, -0.02], [0.985, 0.76, 1.01]);
+  part(head, sphere(0.28, 24, 16), hairTex,
+    [0, 0.300, 0.320], [1.15, 0.30, 0.50], [-0.50, 0, 0]);
+  for (const side of [-1, 1]) {
+    part(head, sphere(0.20, 20, 14), fade, [side * 0.44, 0.02, -0.01], [0.50, 0.90, 0.90]);
+  }
+  mountHead(root, head, 1.815, 1.00, 0.245);
   const sleeve = { ...fabric, rimBoost: 1.2, tex: sleeveTattooTexture(SKIN.him) };
-  const armR = makeArm(root, [-0.283, 1.466, 0], 0.105, [0.275, 0.254], skin, skin, 'watch');
-  const armL = makeArm(root, [0.283, 1.466, 0], 0.105, [0.275, 0.254], skin, sleeve);
+  const armR = makeArm(root, [-0.265, 1.615, 0], 0.080, [0.285, 0.265], skin, skin, 'watch');
+  const armL = makeArm(root, [0.265, 1.615, 0], 0.080, [0.285, 0.265], skin, sleeve);
   stance(hips, false, true);
   return { root, joints: { head, armR, armL, hips } };
 }
 
 function stance(hips, action, man) {
-  hips.p[1] = action ? 0.92 : 0.98;
+  const standing = man ? 1.03 : 1.00;
+  hips.p[1] = action ? standing - 0.07 : standing;
   for (const [i, { hip, knee, ankle }] of hips.legs.entries()) {
     const side = i === 0 ? -1 : 1;
     const forward = i === (man ? 0 : 1);
-    const bend = action ? (forward ? -0.48 : -0.29) : (forward ? -0.26 : 0);
-    const kneeBend = action ? (forward ? 0.72 : 0.68) : (forward ? 0.31 : 0);
+    const bend = action ? (forward ? -0.48 : -0.29) : (forward ? -0.20 : 0);
+    const kneeBend = action ? (forward ? 0.72 : 0.68) : (forward ? 0.24 : 0);
     hip.r = [bend, 0, side * (action ? 0.10 : 0.045)];
     knee.r = [kneeBend, 0, 0];
     ankle.r = [-bend - kneeBend, 0, -hip.r[2]];
@@ -450,18 +643,19 @@ function aimArm(root, arm, shoulder, bend, direction, alignGrip = true) {
 
 function poseDuo(woman, man) {
   woman.root.p = [-0.58, 0, 0.05];
-  woman.root.r = [0, 0.30, 0];
-  woman.joints.head.r = [0, -0.30, 0];
+  woman.root.r = [0, 0.30, 0.02];
+  woman.joints.head.r = [0.03, -0.28, 0.06];
   stance(woman.joints.hips, false, false);
-  woman.joints.hips.r = [0, 0, 0.05];
+  woman.joints.hips.r = [0, 0, 0.07];
   aimArm(woman.root, woman.joints.armR, [-0.15, 0, -0.55], -1.85, [-0.08, 1, 0.05]);
-  aimArm(woman.root, woman.joints.armL, [-0.55, 0, 0.30], -0.15, [-0.15, -1, 0.65]);
+  aimArm(woman.root, woman.joints.armL, [-0.55, 0, 0.30], -0.32, [-0.15, -1, 0.65]);
   man.root.p = [0.58, 0, -0.05];
-  man.root.r = [0, -0.30, 0];
-  man.joints.head.r = [0, 0.30, 0];
+  man.root.r = [0, -0.30, -0.015];
+  man.joints.head.r = [0, 0.28, -0.045];
   stance(man.joints.hips, false, true);
+  man.joints.hips.r = [0, 0, -0.035];
   aimArm(man.root, man.joints.armL, [-0.15, 0, 0.55], -1.85, [0.08, 1, 0.05]);
-  aimArm(man.root, man.joints.armR, [-0.20, 0, -0.12], -0.15, [0.10, -1, 0.30]);
+  aimArm(man.root, man.joints.armR, [-0.20, 0, -0.12], -0.32, [0.10, -1, 0.30]);
 }
 
 function poseAction(woman, man) {
@@ -470,8 +664,9 @@ function poseAction(woman, man) {
     const { root, joints } = character;
     root.p = [side * 0.58, -0.05, -side * 0.05];
     root.r = [0, -side * 0.12, 0];
-    joints.head.r = [0, side * 0.12, 0];
+    joints.head.r = [0, side * 0.12, -side * 0.05];
     stance(joints.hips, true, index === 1);
+    joints.hips.r = [0, 0, -side * 0.04];
     aimArm(root, joints.armR, [-1.25, 0, -0.06], -0.12, [0, 0, 1], false);
     aimArm(root, joints.armL, [-1.25, 0, 0.06], -0.12, [0, 0, 1], false);
   }
@@ -752,6 +947,9 @@ function seaplane() {
 const CAMERAS = {
   duo: { pos: [0, 1.30, 4.9], target: [0, 0.98, 0], fov: 38 },
   'duo-action': { pos: [0, 1.25, 4.2], target: [0, 1, 0], fov: 40 },
+  'qa-her': { pos: [0, 1.70, 1.45], target: [0, 1.62, 0], fov: 36 },
+  'qa-him': { pos: [0, 1.82, 1.50], target: [0, 1.74, 0], fov: 36 },
+  'qa-duo': { pos: [0, 1.45, 3.05], target: [0, 1.22, 0], fov: 37 },
   boat: { pos: [2.6, 1.15, 4.1], target: [0, 0.45, 0], fov: 42 },
   car: { pos: [2.7, 0.95, 3.9], target: [0, 0.45, 0], fov: 42 },
   moto: { pos: [2.3, 1.05, 4.1], target: [0, 0.85, 0], fov: 42 },
@@ -781,6 +979,34 @@ function buildScene(preset, pal) {
     root.children.push(groundPlane(pal, 'water'));
     const aircraft = seaplane(); aircraft.p = [-0.3, 1.25, 0]; aircraft.s = 0.85; root.children.push(aircraft);
     addPalms([[-4.4, -5.4, 0.8], [4.6, -5.6, 0.9]]);
+  } else if (preset === 'qa-her') {
+    root.children.push(groundPlane(pal));
+    addPalms([[-3.4, -5.4, 4.6], [3.8, -5.6, 5.0], [5.5, -5.8, 3.6]]);
+    const woman = buildWoman();
+    woman.root.p = [0, 0, 0];
+    woman.root.r = [0, 0.18, 0];
+    woman.joints.head.r = [0, -0.18, 0.05];
+    woman.joints.hips.r = [0, 0, 0.07];
+    aimArm(woman.root, woman.joints.armR, [-0.15, 0, -0.55], -1.85, [-0.08, 1, 0.05]);
+    aimArm(woman.root, woman.joints.armL, [-0.55, 0, 0.30], -0.32, [-0.15, -1, 0.65]);
+    root.children.push(woman.root);
+  } else if (preset === 'qa-him') {
+    root.children.push(groundPlane(pal));
+    addPalms([[-3.4, -5.4, 4.6], [3.8, -5.6, 5.0], [5.5, -5.8, 3.6]]);
+    const man = buildMan();
+    man.root.p = [0, 0, 0];
+    man.root.r = [0, -0.18, 0];
+    man.joints.head.r = [0, 0.18, -0.04];
+    man.joints.hips.r = [0, 0, -0.035];
+    aimArm(man.root, man.joints.armL, [-0.15, 0, 0.55], -1.85, [0.08, 1, 0.05]);
+    aimArm(man.root, man.joints.armR, [-0.20, 0, -0.12], -0.32, [0.10, -1, 0.30]);
+    root.children.push(man.root);
+  } else if (preset === 'qa-duo') {
+    root.children.push(groundPlane(pal));
+    addPalms([[-3.4, -5.4, 4.6], [3.8, -5.6, 5.0], [5.5, -5.8, 3.6]]);
+    const woman = buildWoman(); const man = buildMan();
+    poseDuo(woman, man);
+    root.children.push(group({ children: [woman.root, man.root] }));
   } else {
     root.children.push(groundPlane(pal, preset === 'boat' ? 'water' : 'street'));
     if (preset === 'duo' || preset === 'duo-action') {

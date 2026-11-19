@@ -34,8 +34,9 @@ export async function applyShotMode(api) {
     api.setSize(w || 1920, h || 1080);
     const coverLayout = layout === 'finale-nine' ? 'finale' : layout || 'finale';
     const count = Object.hasOwn(panelCounts, coverLayout) ? panelCounts[coverLayout] : 1;
-    const presets = Object.hasOwn(SCENES, coverLayout) ? SCENES[coverLayout] :
+    let presets = Object.hasOwn(SCENES, coverLayout) ? SCENES[coverLayout] :
       Array.from({ length: count }, (_, index) => sceneCycle[index % sceneCycle.length]);
+    if (query.get('scene')) presets = presets.map(() => query.get('scene'));
     api.setState({
       layout: coverLayout, grade, title, subtitle,
       titleStyle: 'stacked',
