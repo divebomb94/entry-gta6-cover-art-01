@@ -1,17 +1,11 @@
-// A working gta6-cover-art-01 entry (Node 22, standard library only): the app is this directory's app/ folder, plain
-// static files a desktop browser loads offline (app/index.html and its ES modules, no library and no network
-// request), and the program hands it in. It copies app/ and screenshots/ from beside this file to /output and writes
-// /output/dossier.json, the summary the judge reads, with the vendored make.fun library. Only the plumbing, not the
-// cover art the bounty asks for: Cover Snap, a plain one-photo square cover with a sunset tint and a bold caption,
-// exported as a 1080 x 1080 PNG. Its two sample photos (app/samples/) were made for make.fun with an image model and
-// are free to use. Build your own GTA-style cover maker in its place, put your 3 or 4 PNG or JPEG screenshots in
-// screenshots/ (the first by name is the cover) and run it.
-//
-// Serve it locally with `node serve.ts`, then open http://localhost:8080.
-// Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
-//   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+// VICE HEAT Cover Studio is an offline static web app that turns photos and a
+// caption into GTA-style multi-panel cover art: 12 layouts, 5 colour grades,
+// display lettering, original badges, and PNG exports in three sizes.
+// This entry point hands it in by copying app/ and screenshots/ to /output
+// (or MAKEFUN_OUTPUT_DIR), verifying the copied files, and writing dossier.json
+// with the vendored make.fun dossier builder.
 
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-app.ts';
@@ -19,10 +13,45 @@ import { buildDossier } from './vendor/makefun-app.ts';
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
+// List files recursively, with paths relative to the directory being walked.
+function walk(dir) {
+  return readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).flatMap(entry =>
+    entry.isDirectory()
+      ? walk(join(dir, entry.name)).map(path => join(entry.name, path))
+      : [entry.name],
+  );
+}
+
 mkdirSync(out, { recursive: true });
 cpSync(join(here, 'app'), join(out, 'app'), { recursive: true });
 mkdirSync(join(out, 'screenshots'), { recursive: true });
 if (existsSync(join(here, 'screenshots'))) cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true });
+
+const problems = [];
+const appDir = join(out, 'app');
+const screenshotsDir = join(out, 'screenshots');
+const sourceScreenshotsDir = join(here, 'screenshots');
+const appFiles = walk(appDir);
+const screenshotsPresent = existsSync(screenshotsDir) && statSync(screenshotsDir).isDirectory();
+if (!existsSync(sourceScreenshotsDir) || !screenshotsPresent) problems.push('Missing screenshots folder');
+const screenshots = screenshotsPresent
+  ? walk(screenshotsDir).map(name => ({ name, bytes: statSync(join(screenshotsDir, name)).size }))
+  : [];
+if (screenshots.length === 0) problems.push('Zero screenshots in output/screenshots');
+if (existsSync(sourceScreenshotsDir)) {
+  for (const name of walk(sourceScreenshotsDir)) {
+    if (!screenshots.some(screenshot => screenshot.name === name)) problems.push(`Missing screenshot: ${name}`);
+  }
+}
+for (const screenshot of screenshots) {
+  if (screenshot.bytes > 256 * 1024) problems.push(`Oversized screenshot: ${screenshot.name} (${screenshot.bytes} bytes; maximum 262144)`);
+}
+console.log('Hand-in verification:', JSON.stringify({
+  app: { files: appFiles.length, bytes: appFiles.reduce((total, name) => total + statSync(join(appDir, name)).size, 0) },
+  screenshots: { files: screenshots.length, bytes: screenshots.reduce((total, screenshot) => total + screenshot.bytes, 0), images: screenshots },
+  problems,
+}, null, 2));
+if (problems.length > 0) throw new Error(`Hand-in verification failed: ${problems.join('; ')}`);
 
 // The scorer's own caps (reference/gate.json): only text_max_bytes shapes the bytes; the others refuse an entry the
 // scorer would refuse (more than 4 screenshots or one over 256 KiB; more than 993 files in app/ or 48 MiB of app

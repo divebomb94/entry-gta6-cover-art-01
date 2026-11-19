@@ -3,21 +3,125 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cover Snap</title>
-<link rel="stylesheet" href="./style.css">
+<meta name="theme-color" content="#100d16">
+<title>VICE HEAT Cover Studio</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <h1>VICE HEAT</h1>
+      <span>COVER STUDIO</span>
+    </div>
+    <p class="tagline">Your city. Your story. Your cover.</p>
+    <span class="live-badge">12 layouts · 6 grades · 3 export sizes</span>
+    <div class="export-tools">
+      <label for="sizeSelect">Output size</label>
+      <select id="sizeSelect">
+        <option value="1080x1080">1080x1080 Square</option>
+        <option value="1080x1350">1080x1350 Portrait</option>
+        <option value="1920x1080">1920x1080 Landscape</option>
+      </select>
+      <button id="exportBtn" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4"/></svg>
+        Export PNG
+      </button>
+    </div>
+  </div>
+</header>
 <main class="app">
-  <section class="controls">
-    <h1>Cover Snap</h1>
-    <p>A photo and a caption, made into a square cover.</p>
-    <label>Photo <input id="photo" type="file" accept="image/*"></label>
-    <label>Caption <input id="caption" type="text" maxlength="40" value="Sunset Heist"></label>
-    <button id="export" type="button">Export PNG 1080 x 1080</button>
-    <p id="status" role="status"></p>
+  <aside class="controls" aria-label="Cover controls">
+    <section class="group">
+      <h2><span aria-hidden="true">01</span> Photos</h2>
+      <div id="dropZone" tabindex="0" role="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4M4 15v5h16v-5"/></svg>
+        Drop photos here or click to browse
+      </div>
+      <input id="fileInput" type="file" accept="image/*" multiple hidden>
+      <div class="sample-row">
+        <button type="button" data-sample="pier">Sample: Pier</button>
+        <button type="button" data-sample="boulevard">Sample: Boulevard</button>
+      </div>
+      <div id="thumbStrip" aria-label="Photo thumbnails"></div>
+    </section>
+    <section class="group">
+      <h2><span aria-hidden="true">02</span> Layout</h2>
+      <div id="layoutGrid">
+        <button type="button" class="layoutBtn" data-layout="hero-slash" aria-pressed="true"><span class="layout-diagram" aria-hidden="true"></span>Hero Slash</button>
+        <button type="button" class="layoutBtn" data-layout="triptych" aria-pressed="false"><span class="layout-diagram" aria-hidden="true"></span>Triptych</button>
+        <button type="button" class="layoutBtn" data-layout="quad" aria-pressed="false"><span class="layout-diagram" aria-hidden="true"></span>Quad Grid</button>
+        <button type="button" class="layoutBtn" data-layout="shards" aria-pressed="false"><span class="layout-diagram" aria-hidden="true"></span>Diagonal Shards</button>
+        <button type="button" class="layoutBtn" data-layout="cover-lines" aria-pressed="false"><span class="layout-diagram" aria-hidden="true"></span>Cover Lines</button>
+        <button type="button" class="layoutBtn" data-layout="duo-slash" aria-pressed="false"><span class="layout-diagram" aria-hidden="true"></span>Duo Slash</button>
+        <button type="button" class="layoutBtn" data-layout="big-top" aria-pressed="false"><span class="layout-diagram" aria-hidden="true"></span>Big Top</button>
+        <button type="button" class="layoutBtn" data-layout="l-frame" aria-pressed="false"><span class="layout-diagram" aria-hidden="true"></span>L Frame</button>
+        <button type="button" class="layoutBtn" data-layout="mosaic-6" aria-pressed="false"><span class="layout-diagram" aria-hidden="true"></span>Mosaic Six</button>
+        <button type="button" class="layoutBtn" data-layout="spotlight" aria-pressed="false"><span class="layout-diagram" aria-hidden="true"></span>Spotlight</button>
+        <button type="button" class="layoutBtn" data-layout="twin-towers" aria-pressed="false"><span class="layout-diagram" aria-hidden="true"></span>Twin Towers</button>
+        <button type="button" class="layoutBtn" data-layout="finale-nine" aria-pressed="false"><span class="layout-diagram" aria-hidden="true"></span>Finale Nine</button>
+      </div>
+    </section>
+    <section class="group">
+      <h2><span aria-hidden="true">03</span> Colour grade</h2>
+      <div id="gradeRow">
+        <button type="button" data-grade="sunset" aria-pressed="true"><span class="swatch" aria-hidden="true"></span>Sunset Vice</button>
+        <button type="button" data-grade="neon" aria-pressed="false"><span class="swatch" aria-hidden="true"></span>Neon Nights</button>
+        <button type="button" data-grade="golden" aria-pressed="false"><span class="swatch" aria-hidden="true"></span>Golden Hour</button>
+        <button type="button" data-grade="noir" aria-pressed="false"><span class="swatch" aria-hidden="true"></span>Noir Heat</button>
+        <button type="button" data-grade="chrome" aria-pressed="false"><span class="swatch" aria-hidden="true"></span>Chrome Palm</button>
+        <button type="button" data-grade="miami" aria-pressed="false"><span class="swatch" aria-hidden="true"></span>Miami Mint</button>
+      </div>
+    </section>
+    <section class="group">
+      <h2><span aria-hidden="true">04</span> Lettering</h2>
+      <div class="fields">
+        <label>Title <input id="titleInput" type="text" value="VICE HEAT"></label>
+        <label>Subtitle <input id="subtitleInput" type="text" value="Sunset Heist"></label>
+        <label>Title size <input id="titleSize" type="range" min="60" max="200" value="120"></label>
+        <label>Title style
+          <select id="titleStyle">
+            <option value="stacked">Stacked Outline</option>
+            <option value="neon">Neon Glow</option>
+            <option value="chrome">Chrome</option>
+            <option value="classic">Classic Fill</option>
+          </select>
+        </label>
+      </div>
+    </section>
+    <section class="group">
+      <h2><span aria-hidden="true">05</span> Badges</h2>
+      <div class="badge-list">
+        <label><input id="badgeRating" type="checkbox"> 18 rating chip</label>
+        <label><input id="badgePremiere" type="checkbox"> World Premiere starburst</label>
+        <label><input id="badgeBarcode" type="checkbox"> Barcode</label>
+        <label><input id="badgePalm" type="checkbox"> Palm silhouette</label>
+      </div>
+    </section>
+    <section class="group">
+      <h2><span aria-hidden="true">06</span> Panels</h2>
+      <p class="panel-tip">Tip: drag a panel on the canvas to reposition its photo, scroll over a panel to zoom it, click a panel to select it, then assign a photo from the strip. Arrow keys nudge the selected panel's focus; plus and minus zoom it.</p>
+    </section>
+  </aside>
+  <section class="stage" aria-label="Cover preview">
+    <div class="stage-head">
+      <h2>Cover preview</h2>
+      <span>ARTBOARD / 01</span>
+    </div>
+    <div id="stageWrap">
+      <canvas id="coverCanvas" width="1080" height="1080" aria-label="Cover art preview">Cover art preview</canvas>
+    </div>
+    <p id="statusLine" role="status">Ready for photos</p>
   </section>
-  <canvas id="cover" width="1080" height="1080" aria-label="The cover"></canvas>
 </main>
-<script type="module" src="./src/main.js"></script>
+<footer class="footer">
+  <ul>
+    <li>Works offline</li>
+    <li>No uploads leave your device</li>
+    <li>PNG exports in three sizes</li>
+    <li>Six grades, including Miami Mint</li>
+  </ul>
+</footer>
+<script type="module" src="src/main.js"></script>
 </body>
 </html>
