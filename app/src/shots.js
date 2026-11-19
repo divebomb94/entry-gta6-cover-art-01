@@ -16,10 +16,11 @@ export async function applyShotMode(api) {
 
   api.setSize(Number(query.get('w')) || (coverOnly ? 1920 : 1080), Number(query.get('h')) || (coverOnly ? 1080 : 1080));
   const firstName = query.get('photo') || 'pier';
+  const layout = query.get('layout') || (coverOnly ? 'finale' : 'hero-slash');
   const secondName = firstName === 'pier' ? 'boulevard' : 'pier';
 
   api.setState({
-    layout: query.get('layout') || (coverOnly ? 'finale' : 'hero-slash'),
+    layout,
     grade: query.get('grade') || 'sunset',
     title: query.get('caption'),
     subtitle: query.get('sub'),
@@ -34,19 +35,22 @@ export async function applyShotMode(api) {
     document.fonts.ready,
   ]);
   if (coverOnly) {
-    const count = panelCounts[query.get('layout') || 'finale'] || 1;
+    const count = panelCounts[layout] || 1;
     api.setState({ selectedPanel: 0 });
     await api.loadSample(firstName);
     for (let index = 1; index < count; index += 1) {
       api.setState({ selectedPanel: index });
       await api.loadSample(index % 2 ? secondName : firstName);
     }
-    api.setState({ photos: Array.from({ length: count }, (_, index) => ({
+    const photos = Array.from({ length: count }, (_, index) => ({
       img: (index === 0 || index % 2 === 0) ? first?.img : second?.img,
       focusX: .5,
       focusY: (layout === 'finale' || layout === 'cover-lines') && index !== 4 ? .35 : .5,
       zoom: (layout === 'finale' || layout === 'cover-lines') && index !== 4 ? 1.15 : 1,
-    })) });
+    }));
+    const heroIndex = layout === 'finale' ? 4 : 0;
+    photos[heroIndex] = { art: 'heroine', focusX: .5, focusY: .5, zoom: 1 };
+    api.setState({ photos });
   }
   api.render();
   await nextFrame();

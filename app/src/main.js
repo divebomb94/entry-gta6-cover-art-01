@@ -40,7 +40,7 @@ const state = {
   titleStyle: lettering.titleStyle.value,
   badges: readBadges(),
   library: [],
-  assignments: new Map(),
+  assignments: new Map([['hero-slash', new Map([[0, makeAssignment('heroine')]])]]),
   selectedPanel: 0,
 };
 
@@ -48,7 +48,7 @@ let [width, height] = sizeSelect.value.split('x').map(Number);
 let pendingFrame = null;
 const panels = () => layouts.get(state.layout).panels;
 const photoById = id => state.library.find(photo => photo.id === id);
-const thumbnailButtons = new Map();
+const thumbnailButtons = new Map([['heroine', byId('heroineBtn')]]);
 
 function assignments(key = state.layout) {
   if (!state.assignments.has(key)) state.assignments.set(key, new Map());
@@ -74,14 +74,16 @@ function showSelection() {
   }
   const photo = photoById(entry?.photoId);
   statusLine.textContent = `Panel ${state.selectedPanel + 1} selected — ` +
-    (photo ? `${photo.name}, zoom ${entry.zoom.toFixed(1)}` : 'No photo');
+    (entry?.photoId === 'heroine' ? 'Heroine key art' :
+      photo ? `${photo.name}, zoom ${entry.zoom.toFixed(1)}` : 'No photo');
 }
 
 function render() {
   if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
   pendingFrame = null;
-  const photos = panels().map((_, index) => {
+  const photos = state.photos ?? panels().map((_, index) => {
     const entry = assignments().get(index);
+    if (entry?.photoId === 'heroine') return { ...entry, art: 'heroine' };
     const photo = photoById(entry?.photoId);
     return photo ? { ...entry, img: photo.img } : null;
   });
@@ -263,6 +265,7 @@ function setState(partial) {
     if (typeof partial[key] === 'string') state[key] = partial[key];
   }
   if (Number.isFinite(partial.titleSize)) state.titleSize = partial.titleSize;
+  if (Array.isArray(partial.photos)) state.photos = partial.photos;
   if (partial.badges) Object.assign(state.badges, partial.badges);
 
   if (partial.selectedPanel === null) {
@@ -349,7 +352,7 @@ canvas.addEventListener('pointerdown', event => {
   canvas.focus({ preventScroll: true });
   selectPanel(index);
   const entry = selectedAssignment();
-  if (!entry) return;
+  if (!entry || !photoById(entry.photoId)) return;
   canvas.setPointerCapture(event.pointerId);
   drag = {
     pointerId: event.pointerId,
@@ -383,7 +386,7 @@ for (const eventName of ['pointerup', 'pointercancel', 'lostpointercapture']) {
 
 canvas.addEventListener('wheel', event => {
   const entry = selectedAssignment();
-  if (!entry || !event.deltaY || event.ctrlKey) return;
+  if (!entry || !photoById(entry.photoId) || !event.deltaY || event.ctrlKey) return;
   event.preventDefault();
   updateCrop(entry, { zoom: entry.zoom - Math.sign(event.deltaY) * .1 });
 }, { passive: false });
@@ -459,6 +462,7 @@ document.addEventListener('paste', event => {
   event.preventDefault();
   importFiles(photos);
 });
+byId('heroineBtn').addEventListener('click', () => assignPhoto('heroine'));
 for (const button of document.querySelectorAll('[data-sample]')) {
   button.addEventListener('click', () => loadSample(button.dataset.sample).catch(showError));
 }
@@ -511,6 +515,8 @@ const api = { setState, render, loadSample, setSize };
 window.__viceHeat = api;
 setSize(width, height);
 syncControls();
+showSelection();
+render();
 
 const shot = new URLSearchParams(location.search).get('shot');
 if (shot === 'cover' || shot === 'editor') {

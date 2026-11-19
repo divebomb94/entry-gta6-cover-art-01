@@ -1,5 +1,7 @@
 // VICE HEAT Cover Studio — deterministic, canvas-only rendering.
 // Coordinates are normalized; lettering is always drawn at final resolution.
+import { drawHeroineArt } from './heroine.js';
+
 const TAU = Math.PI * 2;
 const FONT = "Anton, 'Arial Black', sans-serif";
 const INK = '#100e20';
@@ -343,8 +345,12 @@ function drawPanel(ctx, points, entry, grade, index, s) {
   ctx.save();
   trace(ctx, points);
   ctx.clip();
-  const placement = photoPlacement(entry, box);
   let drawn = false;
+  if (entry?.art === 'heroine') {
+    drawHeroineArt(ctx, box, grade, s);
+    drawn = true;
+  }
+  const placement = drawn ? null : photoPlacement(entry, box);
   if (placement) {
     try {
       gradedPhoto(ctx, placement, box, grade);

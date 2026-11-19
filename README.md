@@ -8,10 +8,15 @@ An offline static web app for making GTA-style multi-panel cover art.
 Bring photos, write a caption, and build a fictional cover with bold lettering,
 cinematic colour, and original decorative badges.
 
+The heroine key art is an original, fully canvas-drawn GTA-style heroine panel:
+a stylised key-art illustration with a floral sleeve tattoo and a pistol, drawn
+in code — no photos or external art. Assign it to any panel, or use it as the
+default cover’s centrepiece.
+
 ## Make a cover
 
 1. Load your photos or try the bundled sample images.
-2. Choose a layout and assign photos to its panels.
+2. Choose a layout and assign photos or the heroine key art to its panels.
 3. Adjust the framing in the preview.
 4. Pick a colour grade, title style, and optional badges.
 5. Choose an output size and export a PNG.
