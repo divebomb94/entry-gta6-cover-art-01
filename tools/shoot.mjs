@@ -59,7 +59,7 @@ async function captureShot(shot) {
 
     await page.goto(origin + '/' + shot.query, { waitUntil: 'load' });
     try {
-      await page.waitForFunction(() => window.__shotReady === true, { timeout: 20000 });
+      await page.waitForFunction(() => window.__shotReady === true, { timeout: 30000 });
     } catch (error) {
       if (error.name !== 'TimeoutError') throw error;
       console.warn('[' + shot.name + '] warning: __shotReady did not become true within 20 seconds');
@@ -106,7 +106,7 @@ try {
   await startServer();
   browser = await puppeteer.launch({
     executablePath: chromePath,
-    args: ['--no-sandbox', '--disable-dev-shm-usage', '--force-device-scale-factor=1'],
+    args: ['--no-sandbox', '--disable-dev-shm-usage', '--force-device-scale-factor=1', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'],
   });
 
   for (const shot of shots) {

@@ -4,57 +4,58 @@ const panelCounts = {
   'duo-slash': 2, 'big-top': 4, 'l-frame': 4, 'mosaic-6': 6,
   spotlight: 5, 'twin-towers': 3, finale: 9,
 };
+const SCENES = {
+  finale: ['city', 'plane', 'boat', 'car', 'duo', 'moto', 'beach', 'duo-action', 'city'],
+  'hero-slash': ['duo', 'boat', 'car', 'moto'],
+  quad: ['duo', 'car', 'boat', 'moto'],
+  spotlight: ['duo', 'boat', 'car', 'moto', 'plane'],
+  triptych: ['boat', 'duo', 'car'],
+  'duo-slash': ['duo', 'car'],
+  'cover-lines': ['city', 'duo', 'boat'],
+};
+const sceneCycle = ['duo', 'boat', 'car', 'moto', 'plane', 'city', 'beach', 'duo-action'];
+const sceneArt = preset => ({ art: 'scene:' + preset, focusX: .5, focusY: .5, zoom: 1 });
 
 export async function applyShotMode(api) {
   const query = new URLSearchParams(location.search);
   const mode = query.get('shot');
   if (mode !== 'cover' && mode !== 'editor') return;
 
-  const coverOnly = mode === 'cover';
+  const layout = query.get('layout');
+  const grade = query.get('grade') || 'sunset';
+  const title = query.get('caption');
+  const subtitle = query.get('sub');
   window.__shotReady = false;
-  if (coverOnly) document.body.classList.add('shot-cover');
 
-  api.setSize(Number(query.get('w')) || (coverOnly ? 1920 : 1080), Number(query.get('h')) || (coverOnly ? 1080 : 1080));
-  const firstName = query.get('photo') || 'pier';
-  const layout = query.get('layout') || (coverOnly ? 'finale' : 'hero-slash');
-  const secondName = firstName === 'pier' ? 'boulevard' : 'pier';
-
-  api.setState({
-    layout,
-    grade: query.get('grade') || 'sunset',
-    title: query.get('caption'),
-    subtitle: query.get('sub'),
-    titleStyle: coverOnly ? 'stacked' : undefined,
-    selectedPanel: coverOnly ? 0 : 1,
-    ...(coverOnly && { badges: { rating: true, premiere: true, barcode: true, palm: true } }),
-  });
-
-  const [first, second] = await Promise.all([
-    api.loadSample(firstName, { fill: coverOnly }),
-    coverOnly ? api.loadSample(secondName) : Promise.resolve(null),
-    document.fonts.ready,
-  ]);
-  if (coverOnly) {
-    const count = panelCounts[layout] || 1;
-    api.setState({ selectedPanel: 0 });
-    await api.loadSample(firstName);
-    for (let index = 1; index < count; index += 1) {
-      api.setState({ selectedPanel: index });
-      await api.loadSample(index % 2 ? secondName : firstName);
-    }
-    const photos = Array.from({ length: count }, (_, index) => ({
-      img: (index === 0 || index % 2 === 0) ? first?.img : second?.img,
-      focusX: .5,
-      focusY: (layout === 'finale' || layout === 'cover-lines') && index !== 4 ? .35 : .5,
-      zoom: (layout === 'finale' || layout === 'cover-lines') && index !== 4 ? 1.15 : 1,
-    }));
-    const heroIndex = layout === 'finale' ? 4 : 0;
-    photos[heroIndex] = { art: 'heroine', focusX: .5, focusY: .5, zoom: 1 };
-    api.setState({ photos });
+  if (mode === 'cover') {
+    document.body.classList.add('shot-cover');
+    const w = Number(query.get('w'));
+    const h = Number(query.get('h'));
+    api.setSize(w || 1920, h || 1080);
+    const coverLayout = layout === 'finale-nine' ? 'finale' : layout || 'finale';
+    const count = Object.hasOwn(panelCounts, coverLayout) ? panelCounts[coverLayout] : 1;
+    const presets = Object.hasOwn(SCENES, coverLayout) ? SCENES[coverLayout] :
+      Array.from({ length: count }, (_, index) => sceneCycle[index % sceneCycle.length]);
+    api.setState({
+      layout: coverLayout, grade, title, subtitle,
+      titleStyle: 'stacked',
+      badges: { rating: true, premiere: true, barcode: true, palm: true },
+      photos: presets.map(sceneArt),
+    });
+  } else {
+    api.setState({
+      layout: 'finale', grade, title, subtitle,
+      photos: SCENES.finale.map(sceneArt),
+      selectedPanel: 4,
+    });
   }
+
+  await document.fonts.ready;
   api.render();
+  if (mode === 'editor') document.body.style.zoom = '0.62';
   await nextFrame();
   await nextFrame();
-  if (coverOnly) document.title = 'shot-ready';
+  await new Promise(resolve => setTimeout(resolve, 250));
+  if (mode === 'cover') document.title = 'shot-ready';
   window.__shotReady = true;
 }

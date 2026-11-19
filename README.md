@@ -8,20 +8,22 @@ An offline static web app for making GTA-style multi-panel cover art.
 Bring photos, write a caption, and build a fictional cover with bold lettering,
 cinematic colour, and original decorative badges.
 
-The heroine key art is an original, fully canvas-drawn GTA-style heroine panel:
-a stylised key-art illustration with a floral sleeve tattoo and a pistol, drawn
-in code — no photos or external art. Assign it to any panel, or use it as the
-default cover’s centrepiece.
+The original 3D key art features a tattooed duo, a woman and a man with dual
+pistols. The app renders them in real time with its own compact WebGL engine
+(`app/src/gl3d.js` and `app/src/duo3d.js`). Other presets show the duo in action,
+a speedboat, a supercar, a motorcycle doing a wheelie, a seaplane, a skyline,
+and a palm-lined beach. Assign any of these scenes to any panel alongside
+your own photos.
 
 ## Make a cover
 
-1. Load your photos or try the bundled sample images.
-2. Choose a layout and assign photos or the heroine key art to its panels.
-3. Adjust the framing in the preview.
+1. Browse for, paste, or drop your photos, or pick a built-in 3D scene.
+2. Choose a layout and assign photos or scenes to its panels.
+3. Adjust photo framing in the preview.
 4. Pick a colour grade, title style, and optional badges.
 5. Choose an output size and export a PNG.
 
-The preview combines clipped photo panels, strong borders, atmospheric colour,
+The preview combines clipped photo and scene panels, strong borders, atmospheric colour,
 and display lettering. Title and subtitle controls personalise the cover.
 
 ## Twelve layouts
@@ -48,7 +50,7 @@ Panel geometry scales with the selected output dimensions.
 - **Noir Heat**
 - **Chrome Palm**
 
-Each preset gives the photos and surrounding atmosphere a coordinated palette.
+Each preset gives the photos and 3D scenes a coordinated palette.
 Switch grades while composing to compare the mood in the preview.
 
 ## Lettering and badges
@@ -84,7 +86,7 @@ node serve.ts
 ```
 
 Open <http://localhost:8080> in a modern browser.
-The app uses local HTML, CSS, JavaScript, fonts, and sample assets.
+The app uses local HTML, CSS, JavaScript, and fonts.
 No package installation or remote service is needed.
 
 ## Hand-in
@@ -103,16 +105,16 @@ Missing screenshots, zero screenshots, or screenshots above 256 KiB fail loudly.
 The unchanged vendored `buildDossier` then writes `dossier.json` with its caps.
 The verification summary stays in stdout rather than adding dossier fields.
 
-## Included screenshots
+## Screenshot presets
 
-The current JPEGs document the earlier **Cover Snap** version, not the current
-multi-panel VICE HEAT editor:
-
-- `screenshots/1-cover.jpg`: a fisherman on a pier, captioned “SUNSET HEIST”.
-  This is the first screenshot by filename and serves as the hand-in cover.
-- `screenshots/2-editor.jpg`: the earlier editor with a photo picker, caption
-  field, square export button, and “BOULEVARD QUEEN” preview.
-- `screenshots/3-cover.jpg`: the square “BOULEVARD QUEEN” cover by itself.
+- `screenshots/1-cover.jpg` shows the “Vice Heat” Finale Nine collage,
+  subtitled “Sunset Heist”. It serves as the hand-in cover.
+- `screenshots/2-editor.jpg` shows the editor with the 3D duo selected in
+  the “Duo Heat” Hero Slash layout.
+- `screenshots/3-portrait.jpg` shows the “Neon Coast” portrait in the
+  Spotlight layout, subtitled “After Dark”.
+- `screenshots/4-square.jpg` shows the “Palm Vice” square in the Quad Grid
+  layout, subtitled “Golden Hour”.
 
 ## Design choices
 
@@ -120,8 +122,8 @@ multi-panel VICE HEAT editor:
 - **Private:** photo processing happens locally; no uploads leave the device.
 - **Crisp exports:** rendering at twice the requested dimensions and downsampling
   keeps panel edges and lettering sharp in the final PNG.
-- **Original art only:** the cover graphics and badges are original; no official
-  GTA artwork or logos are bundled. The sample photos were generated for make.fun.
+- **Original art only:** the 3D scenes, cover graphics, and badges are drawn
+  by the app.
 - **Local typography:** Anton is bundled under the SIL Open Font License (OFL);
   its license is included at `app/fonts/OFL.txt`.
 

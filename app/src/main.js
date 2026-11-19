@@ -1,4 +1,5 @@
 import { LAYOUTS, GRADES, drawCover } from './cover.js';
+import { listScenes } from './duo3d.js';
 
 const byId = id => document.getElementById(id);
 const canvas = byId('coverCanvas');
@@ -40,7 +41,7 @@ const state = {
   titleStyle: lettering.titleStyle.value,
   badges: readBadges(),
   library: [],
-  assignments: new Map([['hero-slash', new Map([[0, makeAssignment('heroine')]])]]),
+  assignments: new Map([['hero-slash', new Map([[0, { art: 'scene:duo', focusX: .5, focusY: .5, zoom: 1 }]])]]),
   selectedPanel: 0,
 };
 
@@ -48,15 +49,16 @@ let [width, height] = sizeSelect.value.split('x').map(Number);
 let pendingFrame = null;
 const panels = () => layouts.get(state.layout).panels;
 const photoById = id => state.library.find(photo => photo.id === id);
-const thumbnailButtons = new Map([['heroine', byId('heroineBtn')]]);
+const thumbnailButtons = new Map();
+const sceneLabels = new Map(listScenes().map(({ key, label }) => ['scene:' + key, label]));
 
 function assignments(key = state.layout) {
   if (!state.assignments.has(key)) state.assignments.set(key, new Map());
   return state.assignments.get(key);
 }
 
-function makeAssignment(photoId, crop = {}) {
-  return { focusX: .5, focusY: .5, zoom: 1, ...crop, photoId };
+function makeAssignment(photoId) {
+  return { focusX: .5, focusY: .5, zoom: 1, photoId };
 }
 
 function selectedAssignment() {
@@ -66,7 +68,7 @@ function selectedAssignment() {
 function showSelection() {
   const entry = selectedAssignment();
   for (const [id, button] of thumbnailButtons) {
-    button.setAttribute('aria-pressed', id === entry?.photoId);
+    button.setAttribute('aria-pressed', id === (entry?.art ?? entry?.photoId));
   }
   if (state.selectedPanel === null) {
     statusLine.textContent = 'Select a panel to edit its photo';
@@ -74,16 +76,16 @@ function showSelection() {
   }
   const photo = photoById(entry?.photoId);
   statusLine.textContent = `Panel ${state.selectedPanel + 1} selected — ` +
-    (entry?.photoId === 'heroine' ? 'Heroine key art' :
+    (entry?.art ? sceneLabels.get(entry.art) :
       photo ? `${photo.name}, zoom ${entry.zoom.toFixed(1)}` : 'No photo');
 }
 
 function render() {
   if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
   pendingFrame = null;
-  const photos = state.photos ?? panels().map((_, index) => {
+  const photos = panels().map((_, index) => {
     const entry = assignments().get(index);
-    if (entry?.photoId === 'heroine') return { ...entry, art: 'heroine' };
+    if (entry?.art || entry?.img) return { ...entry };
     const photo = photoById(entry?.photoId);
     return photo ? { ...entry, img: photo.img } : null;
   });
@@ -111,11 +113,6 @@ function setSize(w, h) {
   queueRender();
 }
 
-const samples = {
-  pier: 'Pier photo',
-  boulevard: 'Boulevard photo',
-};
-const sampleLoads = new Map();
 let nextPhotoId = 1;
 
 async function addPhoto(blob, name) {
@@ -162,46 +159,14 @@ function assignPhoto(id, index = state.selectedPanel) {
   queueRender();
 }
 
-function getSample(name) {
-  if (!Object.hasOwn(samples, name)) return Promise.reject(new Error('Unknown sample photo'));
-  if (!sampleLoads.has(name)) {
-    const url = new URL(`../samples/${name}.jpg`, import.meta.url);
-    const load = (async () => {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`Could not load ${samples[name]}`);
-      return addPhoto(await response.blob(), samples[name]);
-    })().catch(error => {
-      sampleLoads.delete(name);
-      throw error;
-    });
-    sampleLoads.set(name, load);
+function assignArt(art) {
+  if (state.selectedPanel === null) {
+    const empty = firstEmptyPanel();
+    state.selectedPanel = empty === -1 ? 0 : empty;
   }
-  return sampleLoads.get(name);
-}
-
-async function loadSample(name, { fill = false } = {}) {
-  const photo = await getSample(name);
-  if (fill) {
-    // Vary the crop so a single sample still reads as a contact sheet.
-    panels().forEach((_, index) => {
-      assignments().set(index, makeAssignment(photo.id, sampleCrop(index)));
-    });
-    showSelection();
-    queueRender();
-  } else {
-    assignPhoto(photo.id);
-  }
-  return photo;
-}
-
-function sampleCrop(index) {
-  const crops = [
-    {},
-    { focusX: .25, focusY: .35, zoom: 1.25 },
-    { focusX: .73, focusY: .64, zoom: 1.55 },
-    { focusX: .6, focusY: .48, zoom: 1.1 },
-  ];
-  return crops[index % crops.length];
+  assignments().set(state.selectedPanel, { art, focusX: .5, focusY: .5, zoom: 1 });
+  showSelection();
+  queueRender();
 }
 
 function showError(error) {
@@ -230,22 +195,6 @@ async function importFiles(files) {
   if (failure) showError(failure);
 }
 
-async function seedCover() {
-  const [pier, boulevard] = await Promise.allSettled([
-    getSample('pier'),
-    getSample('boulevard'),
-    displayFont,
-  ]);
-  const starter = assignments('hero-slash');
-  for (const [index, result] of [pier, pier, pier, boulevard].entries()) {
-    if (result.status === 'fulfilled' && !starter.has(index)) {
-      starter.set(index, makeAssignment(result.value.id, sampleCrop(index)));
-    }
-  }
-  showSelection();
-  render();
-}
-
 function syncControls() {
   for (const button of layoutButtons) {
     button.setAttribute('aria-pressed', layoutKey(button.dataset.layout) === state.layout);
@@ -265,7 +214,11 @@ function setState(partial) {
     if (typeof partial[key] === 'string') state[key] = partial[key];
   }
   if (Number.isFinite(partial.titleSize)) state.titleSize = partial.titleSize;
-  if (Array.isArray(partial.photos)) state.photos = partial.photos;
+  if (Array.isArray(partial.photos)) {
+    state.assignments.set(state.layout, new Map(partial.photos.flatMap(
+      (entry, index) => entry ? [[index, { ...entry }]] : [],
+    )));
+  }
   if (partial.badges) Object.assign(state.badges, partial.badges);
 
   if (partial.selectedPanel === null) {
@@ -462,9 +415,10 @@ document.addEventListener('paste', event => {
   event.preventDefault();
   importFiles(photos);
 });
-byId('heroineBtn').addEventListener('click', () => assignPhoto('heroine'));
-for (const button of document.querySelectorAll('[data-sample]')) {
-  button.addEventListener('click', () => loadSample(button.dataset.sample).catch(showError));
+for (const button of document.querySelectorAll('[data-scene]')) {
+  const art = 'scene:' + button.dataset.scene;
+  thumbnailButtons.set(art, button);
+  button.addEventListener('click', () => assignArt(art));
 }
 
 for (const button of layoutButtons) {
@@ -511,7 +465,7 @@ byId('exportBtn').addEventListener('click', () => exportCover().catch(showError)
 import { applyShotMode } from './shots.js';
 
 const displayFont = document.fonts.load('120px Anton').catch(() => {});
-const api = { setState, render, loadSample, setSize };
+const api = { setState, render, setSize };
 window.__viceHeat = api;
 setSize(width, height);
 syncControls();
@@ -525,8 +479,5 @@ if (shot === 'cover' || shot === 'editor') {
     showError(error);
   });
 } else {
-  // The first automatic preview waits for the starter photos and lettering.
-  cancelAnimationFrame(pendingFrame);
-  pendingFrame = null;
-  seedCover();
+  displayFont.then(render);
 }
