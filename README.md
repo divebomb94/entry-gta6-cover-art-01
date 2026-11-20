@@ -124,8 +124,9 @@ The verification summary stays in stdout rather than adding dossier fields.
   keeps panel edges and lettering sharp in the final PNG.
 - **Original art only:** the 3D scenes, cover graphics, and badges are drawn
   by the app.
-- **Local typography:** Anton is bundled under the SIL Open Font License (OFL);
-  its license is included at `app/fonts/OFL.txt`.
+- **Local typography:** Anton is bundled under the SIL Open Font License
+  (OFL 1.1); the license text is published by SIL International at
+  https://openfontlicense.org/ and the font files here are an in-app subset.
 
 ---
 
