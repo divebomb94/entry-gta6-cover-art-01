@@ -4,18 +4,21 @@ export const SAMPLES = [
     src: 'samples/duo.jpg',
     label: 'Duo on Ocean Drive',
     focal: { x: 0.50, y: 0.34 },
+    headTop: 0.12,
   },
   {
     id: 'woman',
     src: 'samples/woman.jpg',
     label: 'Her — Sunset Boulevard',
     focal: { x: 0.45, y: 0.40 },
+    headTop: 0.32,
   },
   {
     id: 'man',
     src: 'samples/man.jpg',
     label: 'Him — Neon Nights',
     focal: { x: 0.60, y: 0.33 },
+    headTop: 0.18,
   },
   {
     id: 'boulevard',

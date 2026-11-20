@@ -1,6 +1,7 @@
 // VICE HEAT Cover Studio — deterministic, canvas-only rendering.
 // Coordinates are normalized; lettering is always drawn at final resolution.
 import { getSceneCanvas } from './duo3d.js';
+import { SAMPLES } from './samples.js';
 
 const TAU = Math.PI * 2;
 const FONT = "Anton, 'Arial Black', sans-serif";
@@ -196,10 +197,10 @@ function keyArtPhotoPanels(aspect) {
       row(.695, .5, .305, .5), row(.695, 0, .305, .5)];
   }
   if (aspect < .9) {
-    return [row(0, 0, 1, .36),
-      row(0, .36, .6, .24), row(.6, .36, .4, .24),
-      row(0, .60, .5, .20), row(.5, .60, .5, .20),
-      row(.5, .80, .5, .20), row(0, .80, .5, .20)];
+    return [row(0, 0, 1, .38),
+      row(0, .38, .6, .26), row(.6, .38, .4, .26),
+      row(0, .64, .5, .18), row(.5, .64, .5, .18),
+      row(.5, .82, .5, .18), row(0, .82, .5, .18)];
   }
   // Portraits span both grid rows; the four landscape action photos occupy
   // the remaining two columns. This avoids squeezing heads into short tiles.
@@ -376,7 +377,7 @@ function placeholder(ctx, box, grade, index, s) {
   ctx.restore();
 }
 
-function photoPlacement(entry, box, safeBox = box) {
+function photoPlacement(entry, box, safeBox = box, strictCover = false) {
   const img = entry?.img;
   const iw = img?.naturalWidth || img?.videoWidth || img?.width;
   const ih = img?.naturalHeight || img?.videoHeight || img?.height;
@@ -385,10 +386,9 @@ function photoPlacement(entry, box, safeBox = box) {
   let fit = Math.max(box.w / iw, box.h / ih) * zoom;
   const head = entry.headBounds || SAMPLE_HEADS[entry.sampleId];
   const margin = Math.min(safeBox.w, safeBox.h) * .045;
-  // Ordinary focal cover-fit first. For an impossibly shallow/narrow panel,
-  // cap the scale to protect the whole head; extend only the source's outer
-  // edge pixels below instead of clipping hair or introducing empty gutters.
-  if (head) fit = Math.min(fit,
+  // Key art always fills by a uniform cover crop. Other photo layouts may
+  // reduce the fit to keep a sample head inside a tight panel.
+  if (!strictCover && head) fit = Math.min(fit,
     (safeBox.w - margin * 2) / ((head[2] - head[0]) * iw),
     (safeBox.h - margin * 2) / ((head[3] - head[1]) * ih));
   const w = iw * fit;
@@ -397,7 +397,15 @@ function photoPlacement(entry, box, safeBox = box) {
   const fy = clamp(finite(entry.focusY, .5), 0, 1);
   let x = box.x + clamp(box.w / 2 - fx * w, Math.min(0, box.w - w), Math.max(0, box.w - w));
   let y = box.y + clamp(box.h / 2 - fy * h, Math.min(0, box.h - h), Math.max(0, box.h - h));
-  if (head) {
+  const headTop = SAMPLES.find(sample => sample.id === entry.sampleId)?.headTop;
+  if (Number.isFinite(headTop)) {
+    // Move the source window above the hair, preserving uniform cover-fit.
+    const top = Math.max(0, Math.min(headTop - .02,
+      (head?.[1] ?? headTop) - .02));
+    y = clamp(Math.max(y, box.y - top * h),
+      box.y + Math.min(0, box.h - h), box.y + Math.max(0, box.h - h));
+  }
+  if (!strictCover && head) {
     x = clamp(x, safeBox.x + margin - head[0] * w,
       safeBox.x + safeBox.w - margin - head[2] * w);
     y = clamp(y, safeBox.y + margin - head[1] * h,
@@ -406,9 +414,13 @@ function photoPlacement(entry, box, safeBox = box) {
   return { img, w, h, x, y, iw, ih };
 }
 
-function gradedPhoto(ctx, placement, box, grade) {
+function gradedPhoto(ctx, placement, box, grade, strictCover = false) {
   const { img, x, y, w, h, iw, ih } = placement;
   const draw = () => {
+    if (strictCover) {
+      ctx.drawImage(img, x, y, w, h);
+      return;
+    }
     // Nine-slice edge extension is normally zero width/height. It is only
     // needed when full-head safety and strict cover-fit cannot both hold.
     const xs = [box.x, clamp(x, box.x, box.x + box.w),
@@ -476,7 +488,7 @@ function headSafeBox(points, box) {
   return best || box;
 }
 
-function drawPanel(ctx, points, entry, grade, index, s) {
+function drawPanel(ctx, points, entry, grade, index, s, strictCover = false) {
   const box = bounds(points);
   ctx.save();
   trace(ctx, points);
@@ -494,10 +506,10 @@ function drawPanel(ctx, points, entry, grade, index, s) {
     Math.abs(p[0] - points[(i + 1) % 4][0]) < 1e-6 ||
     Math.abs(p[1] - points[(i + 1) % 4][1]) < 1e-6);
   const safeBox = entry?.img && !rectangular ? headSafeBox(points, box) : box;
-  const placement = drawn ? null : photoPlacement(entry, box, safeBox);
+  const placement = drawn ? null : photoPlacement(entry, box, safeBox, strictCover);
   if (placement) {
     try {
-      gradedPhoto(ctx, placement, box, grade);
+      gradedPhoto(ctx, placement, box, grade, strictCover);
       drawn = true;
     } catch { /* An unloaded or unsupported image gets a useful placeholder. */ }
   }
@@ -1001,7 +1013,7 @@ export function drawCover(ctx, W, H, state = {}) {
     } else atmosphere(ctx, W, H, grade, s);
     shapes.forEach((points, index) => {
       const entry = photos[index] || (layout.scenes ? { art: 'scene:' + layout.scenes[index] } : null);
-      drawPanel(ctx, points, entry, grade, index, s);
+      drawPanel(ctx, points, entry, grade, index, s, layout.key === 'keyart-photo');
     });
     if (banded) {
       keyArtLettering(ctx, W, H, state, grade);
