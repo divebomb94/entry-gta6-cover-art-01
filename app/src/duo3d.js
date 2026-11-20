@@ -1,12 +1,14 @@
-import { node, group, box, cylinder, sphere, lathe, torus, profileTube, xform, merge } from './gl3d.js';
+import { node, group, box, cylinder, sphere, lathe, torus, profileTube, xform, merge,
+  blobShadow, emissiveMaterial } from './gl3d.js';
 
 const SKIN = { her: [0.98, 0.76, 0.60], him: [0.87, 0.62, 0.45] };
 const pigment = (color, rimBoost = 1) => ({ color, band: 5, rimBoost });
 const gold = { color: [1, 0.69, 0.22], rimBoost: 2.4, emissive: [0.08, 0.035, 0.006] };
+const goldSpark = emissiveMaterial([1, 0.80, 0.39], 1.5);
 const fabric = { color: [1, 1, 1], band: 5, rimBoost: 1.1 };
 const MAT = {
   skin: { her: pigment(SKIN.her, 1.2), him: pigment(SKIN.him, 1.2) },
-  lip: { her: pigment([0.62, 0.16, 0.18]), him: pigment([0.696, 0.3472, 0.2385]) },
+  lip: { her: pigment([0.63, 0.19, 0.15]), him: pigment([0.38, 0.14, 0.12]) },
   hair: { her: pigment([0.11, 0.06, 0.05], 0.6), him: pigment([0.07, 0.05, 0.04], 0.6) },
   gold,
   gunmetal: { color: [0.15, 0.17, 0.22], rimBoost: 1.8 },
@@ -14,12 +16,12 @@ const MAT = {
   jeans: pigment([0.10, 0.14, 0.23]),
   shirt: pigment([0.035, 0.39, 0.38], 1.25),
   boots: pigment([0.10, 0.06, 0.07]),
-  dress: { ...fabric, band: 3 },
+  dress: { ...fabric, band: 0, shininess: 36, specMul: 1.04 },
   tank: { ...fabric },
 };
 for (const key of ['her', 'him']) {
-  Object.assign(MAT.skin[key], { band: 0, wrap: 0.38, specMul: 0.75 });
-  Object.assign(MAT.lip[key], { specMul: 1.5, wrap: 0.25 });
+  Object.assign(MAT.skin[key], { band: 0, wrap: 0.32, specMul: 0.52, shininess: 22 });
+  Object.assign(MAT.lip[key], { band: 0, specMul: 0.83, shininess: 44, wrap: 0.26 });
 }
 const INK = '#20303a';
 const TEAL = '#315d5b';
@@ -120,7 +122,8 @@ function star(ctx, x, y, r) {
 }
 
 function sleeveTattooTexture(tone = SKIN.her) {
-  return makeCanvas(512, 512, ctx => {
+  return makeCanvas(1024, 1024, ctx => {
+    ctx.scale(2, 2);
     paintSkin(ctx, tone);
     const ink = '#14222b';
     // Broad silhouettes wrap around the whole sleeve, with an offset teal shadow.
@@ -156,14 +159,15 @@ function sleeveTattooTexture(tone = SKIN.her) {
 }
 
 function chestTattooTexture(tone = SKIN.him) {
-  return makeCanvas(512, 512, (ctx, w, h) => {
+  return makeCanvas(1024, 1024, ctx => {
+    ctx.scale(2, 2);
     paintSkin(ctx, tone);
     // Front is U = 0.25. Arc-length V and the flipped canvas upload map
     // chest y=1.392–1.502 to canvas rows ~356–193.
     ctx.save();
-    ctx.translate(w * 0.50, h * 0.44);
+    ctx.translate(256, 512 * 0.44);
     ctx.scale(0.55, 0.55);
-    ctx.translate(-w * 0.50, -h * 0.44);
+    ctx.translate(-256, -512 * 0.44);
     ctx.translate(0, 153);
     const x = 128;
     const y = 106;
@@ -241,9 +245,9 @@ function textureRandom(seed) {
   };
 }
 
-function skinTexture(tone) {
+function skinTexture(tone, stubble = false) {
   const random = textureRandom(31);
-  return makeCanvas(256, 256, (ctx, w, h) => {
+  return makeCanvas(512, 512, (ctx, w, h) => {
     ctx.fillStyle = `rgb(${toneRGB(tone)})`;
     ctx.fillRect(0, 0, w, h);
     const dots = (count, minRadius, maxRadius, variation, alpha) => {
@@ -258,8 +262,14 @@ function skinTexture(tone) {
         ctx.fillRect(x - r, y - r, 2 * r, 2 * r);
       }
     };
-    dots(14, 30, 70, 0.03, 0.04);
-    dots(700, 1, 3, 0.05, 0.05);
+    dots(26, 32, 85, 0.10, 0.12);
+    dots(5400, 0.6, 2, 0.24, 0.23);
+    for (let i = 0; i < (stubble ? 3500 : 190); i++) {
+      const x = stubble ? random() * w : (0.14 + random() * 0.22) * w;
+      const y = (stubble ? 0.61 + random() * 0.27 : 0.49 + random() * 0.13) * h;
+      ctx.fillStyle = stubble ? 'rgba(47,29,27,0.20)' : 'rgba(112,54,36,0.24)';
+      ctx.fillRect(x, y, 0.7 + random(), 0.8 + random());
+    }
   });
 }
 
@@ -271,7 +281,7 @@ function hairTexture(base) {
     for (let i = 0; i < 90; i++) {
       const x = (i + random()) * w / 90;
       const wave = 2 + random() * 7;
-      const color = `rgba(${toneRGB(base, i % 2 ? 1.25 : 0.72)},0.5)`;
+      const color = `rgba(${toneRGB(base, i % 2 ? 1.8 : 0.55)},0.63)`;
       stroke(ctx, color, 1.5 + random() * 1.5, () => {
         ctx.moveTo(x, 0);
         ctx.bezierCurveTo(x + wave, h / 3, x - wave, 2 * h / 3, x, h);
@@ -285,34 +295,12 @@ function hairTexture(base) {
   });
 }
 
-function stubbleTexture(tone) {
-  const random = textureRandom(113);
-  const dots = makeCanvas(256, 256, (ctx, w, h) => {
-    ctx.fillStyle = `rgba(${toneRGB(tone, 0.45)},0.35)`;
-    ctx.beginPath();
-    for (let i = 0; i < 2600; i++) {
-      const x = random() * w, y = random() * h;
-      const r = 0.65 + random() * 0.7;
-      ctx.moveTo(x + r, y);
-      ctx.arc(x, y, r, 0, TAU);
-    }
-    ctx.fill();
-    const mask = ctx.createLinearGradient(0, 0, 0, h);
-    mask.addColorStop(0, 'rgba(0,0,0,0)');
-    mask.addColorStop(1, 'rgba(0,0,0,1)');
-    ctx.globalCompositeOperation = 'destination-in';
-    ctx.fillStyle = mask;
-    ctx.fillRect(0, 0, w, h);
-  });
-  return makeCanvas(256, 256, (ctx, w, h) => {
-    ctx.fillStyle = `rgb(${toneRGB(tone, 0.92)})`;
-    ctx.fillRect(0, 0, w, h);
-    ctx.drawImage(dots, 0, 0);
-  });
-}
-
+const faceSkin = { ...MAT.skin };
 if (typeof document !== 'undefined') {
-  for (const key of ['her', 'him']) MAT.skin[key].tex = skinTexture(SKIN[key]);
+  for (const key of ['her', 'him']) {
+    Object.assign(MAT.skin[key], { color: [1, 1, 1], tex: skinTexture(SKIN[key]) });
+    faceSkin[key] = key === 'him' ? { ...MAT.skin[key], tex: skinTexture(SKIN[key], true) } : MAT.skin[key];
+  }
 }
 
 function dressTexture() {
@@ -340,7 +328,7 @@ function dressTexture() {
       ctx.save();
       ctx.lineCap = 'round';
       ctx.lineWidth = width;
-      ctx.strokeStyle = dark ? 'rgba(60,0,40,0.15)' : 'rgba(255,180,220,0.08)';
+      ctx.strokeStyle = dark ? 'rgba(60,0,40,0.24)' : 'rgba(255,180,220,0.22)';
       if (dark) {
         ctx.shadowColor = 'rgba(60,0,40,0.10)';
         ctx.shadowBlur = 6;
@@ -373,53 +361,90 @@ function joint(parent, p) {
   return child;
 }
 
-function buildFace({ skin, lip, hair, brow, jawMat }) {
+function sculptSphere(w, h, shape) {
+  const geo = sphere(1, w, h);
+  for (let i = 0; i <= h; i++) for (let j = 0; j <= w; j++) {
+    const u = j / w * TAU, v = i / h * Math.PI;
+    const p = shape(u, v);
+    // Sample tangents off the poles, where longitude collapses to one point.
+    const t = Math.max(0.001, Math.min(Math.PI - 0.001, v));
+    const a = shape(u + 0.001, t).map((x, k) => x - shape(u - 0.001, t)[k]);
+    const b = shape(u, t + 0.001).map((x, k) => x - shape(u, t - 0.001)[k]);
+    const n = [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+    const k = (i * (w + 1) + j) * 3;
+    geo.positions.set(p, k);
+    geo.normals.set(n.map(x => x / (Math.hypot(...n) || 1)), k);
+  }
+  return geo;
+}
+
+const bump = (x, y, cx, cy, sx, sy) =>
+  Math.exp(-(((x - cx) / sx) ** 2 + ((y - cy) / sy) ** 2));
+
+function faceSurface(u, v, strongJaw) {
+  const height = Math.cos(v), radial = Math.sin(v);
+  const y = height * 0.55;
+  const jaw = bump(0, y, 0, -0.32, 1, 0.17);
+  const x = Math.cos(u) * radial * (0.424 + jaw * (strongJaw ? 0.027 : -0.023));
+  const front = Math.sin(u);
+  let z = radial * (front > 0 ? Math.pow(front, 0.54) : front) * 0.428;
+  if (front > 0) {
+    const a = Math.abs(x);
+    z += front ** 2 * (
+      0.067 * bump(x, y, 0, -0.43, 0.18, 0.095) +
+      0.046 * bump(a, y, 0.237, -0.105, 0.116, 0.084) +
+      0.032 * bump(a, y, 0.158, 0.117, 0.128, 0.047) -
+      0.043 * bump(a, y, 0.159, 0.052, 0.084, 0.053) +
+      0.046 * bump(x, y, 0, 0.039, 0.042, 0.112) +
+      0.111 * bump(x, y, 0, -0.069, 0.052, 0.060) +
+      0.042 * bump(x, y, 0, -0.115, 0.091, 0.027) +
+      0.040 * bump(x, y, 0, -0.248, 0.146, 0.088));
+  }
+  return [x, y, z];
+}
+
+function faceArc(parent, material, points, radius) {
+  const beads = points.map(([x, y, z], i) => xform(sphere(radius, 7, 5),
+    { p: [x, y, z], s: [1.8, 0.5 + 0.5 * Math.sin(Math.PI * i / (points.length - 1)), 0.7] }));
+  part(parent, merge(beads), material);
+}
+
+function buildFace({ skin, lip, hair, brow, strongJaw = false }) {
   const head = group();
   const eye = pigment([0.075, 0.036, 0.025]);
   const white = { color: [0.88, 0.855, 0.83], wrap: 0.3, specMul: 1.6 };
   const iris = { color: [0.14, 0.08, 0.045] };
   const pupil = { color: [0.018, 0.012, 0.009] };
   const glint = { color: [1, 1, 1], emissive: [1, 1, 1] };
-  const nose = { ...skin, color: skin.color.map(v => v * 0.97) };
-  const sides = [-1, 1];
-  const jaw = xform(sphere(0.34, 32, 22), { p: [0, -0.29, 0.05], s: [0.90, 0.80, 0.88] });
-  const sculpt = [
-    xform(sphere(0.5, 40, 28), { s: [0.92, 1.08, 0.98] }),
-    xform(sphere(0.115, 20, 14), { p: [0, -0.455, 0.14], s: [0.95, 0.72, 0.80] }),
-    xform(sphere(0.30, 28, 18), { p: [0, 0.115, 0.315], s: [1.02, 0.40, 0.55] }),
-    xform(sphere(0.038, 14, 10), {
-      p: [0, 0.036, 0.460], s: [0.70, 1.90, 0.68], r: [0.35, 0, 0],
-    }),
-  ];
-  for (const side of sides) {
-    sculpt.push(
-      xform(sphere(0.090, 20, 14), { p: [side * 0.228, -0.088, 0.322], s: [1.0, 0.68, 0.55] }),
-      xform(sphere(0.072, 14, 10), { p: [side * 0.452, -0.02, 0], s: [0.48, 0.95, 0.72] }),
-    );
-  }
-  if (!jawMat) sculpt.push(jaw);
+  const lid = { ...skin, color: skin.color.map((v, i) => v * [0.94, 0.83, 0.81][i]) };
+  const sculpt = [sculptSphere(96, 72, (u, v) => faceSurface(u, v, strongJaw)),
+    ...[-1, 1].map(side => xform(sphere(0.086, 20, 14),
+      { p: [side * 0.419, -0.044, 0.008], s: [0.52, 1, 0.64] }))];
   part(head, merge(sculpt), skin);
-  if (jawMat) part(head, jaw, jawMat);
-  part(head, merge([
-    xform(sphere(0.042, 16, 12), { p: [0, -0.055, 0.470], s: [0.92, 1.02, 0.86] }),
-    xform(box(0.085, 0.030, 0.040), { p: [0, -0.115, 0.452] }),
-  ]), nose);
-  for (const side of sides) {
-    const x = side * 0.166;
-    part(head, sphere(0.008), eye, [side * 0.020, -0.120, 0.460]);
-    part(head, sphere(0.060, 20, 14), white, [x, 0.046, 0.427], [1.12, 0.66, 0.46]);
-    part(head, disc(0.033, 20), iris, [x, 0.048, 0.4585]);
-    part(head, disc(0.016, 14), pupil, [x, 0.048, 0.4605]);
-    part(head, sphere(0.0085), glint, [side * 0.154, 0.064, 0.456]);
-    part(head, box(0.12, 0.011, 0.016), eye,
-      [x, 0.084, 0.450], undefined, [0, 0, -side * 0.08]);
-    part(head, box(0.14, 0.022, 0.026), brow ?? hair,
-      [side * 0.168, 0.158, 0.460], undefined, [0, 0, -side * 0.10]);
+  for (const side of [-1, 1]) {
+    const x = side * 0.163;
+    part(head, sphere(0.010, 12, 8), lid, [side * 0.033, -0.122, 0.457], [1.15, 0.46, 0.52]);
+    const almond = (t, sign) => [x + side * 0.070 * t,
+      0.051 + 0.007 * t + sign * (sign > 0 ? 0.026 : 0.019) * (1 - t*t),
+      0.427 - 0.023 * t - 0.023 * t*t];
+    part(head, sculptSphere(32, 20, (u, v) => {
+      const t = Math.cos(v), a = almond(t, Math.sign(Math.cos(u)));
+      return [a[0], 0.051 + 0.007 * t + (a[1] - 0.051 - 0.007 * t) * Math.abs(Math.cos(u)),
+        a[2] - side * 0.038 * Math.sin(u) * (1 - t*t)];
+    }), white);
+    part(head, sphere(0.021, 24, 16), iris, [x - side * 0.008, 0.053, 0.466], [1, 1, 0.25]);
+    part(head, sphere(0.010, 16, 10), pupil, [x - side * 0.008, 0.053, 0.470], [1, 1, 0.27]);
+    part(head, sphere(0.005), glint, [x - side * 0.008 - 0.006, 0.061, 0.472]);
+    part(head, sphere(0.0028), glint, [x - side * 0.008 + 0.008, 0.048, 0.473]);
+    const samples = Array.from({ length: 19 }, (_, i) => i / 9 - 1);
+    faceArc(head, eye, samples.map(t => almond(t, 1)), 0.0058);
+    faceArc(head, lid, samples.map(t => almond(t, -1)), 0.0057);
+    faceArc(head, brow ?? hair, samples.map(t => [x + side * 0.071 * t,
+      0.131 + 0.021 * (1 - (t - 0.17) ** 2), 0.439 - 0.042 * t - 0.016 * t*t]), 0.0087);
   }
-  part(head, sphere(0.072, 18, 12), lip, [0, -0.240, 0.426], [1.28, 0.36, 0.52]);
-  part(head, sphere(0.068, 18, 12), lip, [0, -0.278, 0.428], [1.16, 0.44, 0.56]);
-  part(head, box(0.085, 0.009, 0.012), { ...lip, color: lip.color.map(v => v * 0.55) },
-    [0, -0.259, 0.4525]);
+  part(head, sphere(0.087, 28, 18), lip, [0, -0.242, 0.416], [1.22, 0.23, 0.32]);
+  part(head, sphere(0.077, 28, 18), { ...lip, color: lip.color.map(v => v * 1.13) },
+    [0, -0.267, 0.415], [1.20, 0.29, 0.40]);
   return head;
 }
 
@@ -504,18 +529,50 @@ function mountHead(root, face, y, scale, mountScale) {
   mount.s = mountScale;
   mount.children.push(face);
   face.s = scale;
+  face.isHead = true;
+}
+
+function hairCap(hair, woman) {
+  const geo = sculptSphere(64, 30, (u, v) => {
+    const front = Math.max(0, Math.sin(u));
+    const end = (woman ? 1.98 : 1.76) - (woman ? 1.05 : 0.89) * front ** 0.65 +
+      0.12 * front * Math.cos(u);
+    const phi = v / Math.PI * end;
+    const wave = 1 + 0.014 * Math.cos(u * 13 + phi * 4) * Math.sin(phi);
+    return [Math.cos(u) * Math.sin(phi) * (woman ? 0.485 : 0.452) * wave,
+      0.064 + Math.cos(phi) * (woman ? 0.547 : 0.515),
+      -0.023 + Math.sin(u) * Math.sin(phi) * (woman ? 0.52 : 0.49) * wave];
+  });
+  // Open cap: restore the final ring, which sphere topology treats as a pole.
+  const indices = Array.from(geo.indices);
+  for (let j = 0; j < 64; j++) {
+    const a = 29 * 65 + j, b = a + 65;
+    indices.push(a + 1, b + 1, b);
+  }
+  geo.indices = new Uint16Array(indices);
+  const colors = new Float32Array(geo.positions.length);
+  for (let i = 0; i < colors.length; i += 3) {
+    const v = 1 - geo.uvs[i / 3 * 2 + 1];
+    const side = 1 - Math.abs(Math.sin(geo.uvs[i / 3 * 2] * TAU));
+    colors.fill(1 + (woman ? 0.10 : 0.85 * side) * v ** 6, i, i + 3);
+  }
+  return { geometry: { ...geo, colors }, material: { ...hair, vertexColors: true } };
+}
+
+function texturedHair(hair) {
+  return { ...hair, color: [1, 1, 1], band: 0, shininess: 42, specMul: 0.22,
+    tex: hairTexture(hair.color) };
 }
 
 function womanHair(head, hair) {
-  const hairTex = { ...hair, tex: hairTexture(hair.color) };
-  part(head, sphere(0.53, 36, 24), hairTex, [0, 0.055, -0.045], [0.96, 1.07, 1.01]);
-  part(head, sphere(0.34, 28, 18), hairTex, [0.02, 0.35, 0.05], [1.05, 0.52, 1.05]);
-  part(head, sphere(0.30, 24, 16), hairTex, [-0.10, 0.330, 0.260], [0.90, 0.35, 0.60], [0, 0, 0.35]);
-  const path = [[0.10, 0.40, -0.28], [-0.27, 0.25, -0.25], [-0.46, -0.02, 0.02],
-    [-0.47, -0.31, 0.38], [-0.33, -0.62, 0.34]];
+  const hairTex = texturedHair(hair);
+  const cap = hairCap(hairTex, true);
+  part(head, cap.geometry, cap.material);
+  const path = [[-0.18, 0.36, -0.31], [-0.38, 0.15, -0.25], [-0.49, -0.13, 0.05],
+    [-0.55, -0.47, 0.31], [-0.57, -0.78, 0.43], [-0.52, -1.08, 0.48]];
   part(head, torus(0.12, 0.018), gold, path[0], undefined, [Math.PI / 2, 0, 0]);
-  const radii = [0.132, 0.167, 0.137, 0.104, 0.029].map(radius => radius * 0.85);
-  for (let i = 0; i < 4; i++) {
+  const radii = [0.11, 0.125, 0.118, 0.102, 0.071, 0.019];
+  for (let i = 0; i < path.length - 1; i++) {
     const a = path[i];
     const b = path[i + 1];
     const [dx, dy, dz] = b.map((v, j) => v - a[j]);
@@ -525,7 +582,7 @@ function womanHair(head, hair) {
       a.map((v, j) => (v + b[j]) / 2), undefined,
       [Math.atan2(-dz, -dy), 0, Math.asin(dx / len)]);
   }
-  part(head, sphere(radii[4]), hairTex, path[4], [1, 1.28, 1]);
+  part(head, sphere(radii.at(-1)), hairTex, path.at(-1), [1, 1.28, 1]);
 }
 
 function buildWoman() {
@@ -538,18 +595,21 @@ function buildWoman() {
   const dress = { ...MAT.dress, tex: dressTexture() };
   part(hips, lathe([[0.27, -0.42], [0.255, -0.33], [0.230, -0.20], [0.218, -0.08],
     [0.196, 0.0], [0.168, 0.05], [0.160, 0.10]], 40), dress, [0, 0, 0], [1, 1, 0.80]);
-  part(root, lathe([[0.158, 1.00], [0.152, 1.08], [0.140, 1.16], [0.156, 1.24],
+  part(root, lathe([[0.158, 1.00], [0.149, 1.08], [0.132, 1.16], [0.151, 1.24],
     [0.178, 1.33], [0.199, 1.40], [0.190, 1.45], [0.168, 1.52], [0.128, 1.58],
     [0.105, 1.615], [0.078, 1.650]], 40), dress, [0, 0, 0], [1, 1, 0.80]);
   part(root, cylinder(0.056, 0.072, 0.13), skin, [0, 1.655, 0]);
-  part(root, torus(0.072, 0.008), gold, [0, 1.650, 0.003], undefined, [1.32, 0, 0]);
+  part(root, cylinder(0.065, 0.069, 0.021, 40, true), gold, [0, 1.660, 0]);
   part(root, sphere(0.018), gold, [0, 1.622, 0.080], [0.85, 1.25, 0.62]);
+  part(root, sphere(0.0038), goldSpark, [-0.009, 1.661, 0.066]);
+  part(root, sphere(0.0033), goldSpark, [0.004, 1.628, 0.091]);
   const head = buildFace({ skin, lip: MAT.lip.her, hair, brow: hair });
   mountHead(root, head, 1.740, 0.96, 0.238);
   womanHair(head, hair);
   for (const side of [-1, 1]) {
     part(head, torus(0.035, 0.008), gold, [side * 0.461, -0.091, 0.025],
       [0.86, 1.18, 1], [0, side * 0.45, 0]);
+    part(head, sphere(0.010), goldSpark, [side * 0.469, -0.115, 0.042]);
   }
   const sleeve = { ...fabric, rimBoost: 1.2, tex: sleeveTattooTexture(SKIN.her) };
   const armR = makeArm(root, [-0.215, 1.565, 0], 0.070, [0.27, 0.25], skin, sleeve);
@@ -558,6 +618,45 @@ function buildWoman() {
   hips.legs = legs;
   stance(hips, false, false);
   return { root, joints: { head, armR, armL, hips } };
+}
+
+function shirtTexture() {
+  return makeCanvas(256, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#258d83';
+    ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 12; i++) {
+      const x = 14 + 20 * i;
+      stroke(ctx, i % 2 ? '#a2e3ca53' : '#0a403d66', 2 + i % 4, () => {
+        ctx.moveTo(x, -10);
+        ctx.bezierCurveTo(x - 34, 120, x + 27, 300, x - 22, h + 10);
+      });
+    }
+    ctx.fillStyle = '#073b3866';
+    ctx.fillRect(0, 0, 7, h);
+  });
+}
+
+function shirtPanel(side) {
+  // The inner edge hangs open; the outer edge curves around the ribs.
+  const rings = [[1.10, 0.158, 0.219, 0.105], [1.23, 0.134, 0.218, 0.136],
+    [1.37, 0.136, 0.256, 0.162], [1.52, 0.137, 0.282, 0.188],
+    [1.62, 0.105, 0.288, 0.173], [1.665, 0.115, 0.254, 0.129]];
+  const positions = [], normals = [], uvs = [], indices = [];
+  for (let i = 0; i < rings.length; i++) for (let j = 0; j <= 12; j++) {
+    const [y, inner, outer, z] = rings[i], t = j / 12;
+    const wave = Math.sin(t * TAU * 2.2 + y * 8);
+    const fold = 0.010 * wave * Math.sin(t * Math.PI);
+    positions.push(side * (inner + (outer - inner) * t), y, z - 0.135 * t ** 1.8 + fold);
+    const nx = side * (0.6 * t + 0.075 * wave);
+    normals.push(nx, 0, Math.sqrt(1 - nx * nx));
+    uvs.push(t, i / (rings.length - 1));
+    if (i && j) {
+      const b = i * 13 + j, a = b - 13;
+      indices.push(a - 1, a, b, a - 1, b, b - 1);
+    }
+  }
+  return { positions: new Float32Array(positions), normals: new Float32Array(normals),
+    uvs: new Float32Array(uvs), indices: new Uint16Array(indices) };
 }
 
 function buildMan() {
@@ -571,32 +670,23 @@ function buildMan() {
   const belt = pigment([0.08, 0.07, 0.09], 0.6);
   part(hips, lathe([[0.233, -0.025], [0.233, 0.065]], 40), belt,
     [0, 0, 0], [1, 1, 0.76]);
-  part(hips, box(0.40, 0.09, 0.30), belt, [0, 0.02, 0.03]);
-  part(hips, box(0.09, 0.05, 0.02), gold, [0, 0.02, 0.19]);
+  part(hips, box(0.070, 0.042, 0.016), gold, [0, 0.02, 0.181]);
+  part(hips, box(0.045, 0.023, 0.008), belt, [0, 0.02, 0.191]);
   const tank = { ...MAT.tank, tex: tankTexture() };
   const chest = { ...fabric, rimBoost: 1.2, tex: chestTattooTexture() };
   part(root, lathe([[0.212, 1.03], [0.200, 1.12], [0.198, 1.22], [0.228, 1.34],
     [0.252, 1.43], [0.258, 1.48]], 40), tank, [0, 0, 0], [1, 1, 0.77]);
   part(root, lathe([[0.252, 1.46], [0.262, 1.52], [0.266, 1.58], [0.258, 1.63],
     [0.228, 1.665], [0.110, 1.685], [0.095, 1.700], [0.082, 1.725]], 40), chest, [0, 0, 0], [1, 1, 0.77]);
+  const shirt = { ...MAT.shirt, color: [1, 1, 1], tex: shirtTexture(), band: 0, specMul: 0.3 };
   for (const side of [-1, 1]) {
-    part(root, box(0.096, 0.52, 0.06), MAT.shirt, [side * 0.228, 1.40, 0.126],
-      undefined, [0.09, side * 0.38, side * 0.22]);
-    part(root, box(0.107, 0.13, 0.037), MAT.shirt, [side * 0.218, 1.60, 0.168],
-      undefined, [-0.23, side * 0.30, -side * 0.36]);
-    part(root, sphere(0.105), chest, [side * 0.252, 1.615, 0], [1.05, 0.8, 1.0]);
+    part(root, shirtPanel(side), shirt);
+    part(root, sphere(0.103), shirt, [side * 0.253, 1.602, 0], [1.10, 0.82, 1.31]);
   }
   part(root, cylinder(0.075, 0.095, 0.14), skin, [0, 1.715, 0]);
-  const jawMat = { ...skin, tex: stubbleTexture(SKIN.him) };
-  const head = buildFace({ skin, lip: MAT.lip.him, hair, brow: hair, jawMat });
-  const hairTex = { ...hair, tex: hairTexture(hair.color) };
-  const fade = { ...hair, color: hair.color.map(v => v * 0.8) };
-  part(head, sphere(0.525, 36, 24), hairTex, [0, 0.175, -0.02], [0.985, 0.76, 1.01]);
-  part(head, sphere(0.28, 24, 16), hairTex,
-    [0, 0.300, 0.320], [1.15, 0.30, 0.50], [-0.50, 0, 0]);
-  for (const side of [-1, 1]) {
-    part(head, sphere(0.20, 20, 14), fade, [side * 0.44, 0.02, -0.01], [0.50, 0.90, 0.90]);
-  }
+  const head = buildFace({ skin: faceSkin.him, lip: MAT.lip.him, hair, brow: hair, strongJaw: true });
+  const cap = hairCap(texturedHair(hair), false);
+  part(head, cap.geometry, cap.material);
   mountHead(root, head, 1.815, 1.00, 0.245);
   const sleeve = { ...fabric, rimBoost: 1.2, tex: sleeveTattooTexture(SKIN.him) };
   const armR = makeArm(root, [-0.265, 1.615, 0], 0.080, [0.285, 0.265], skin, skin, 'watch');
@@ -672,6 +762,21 @@ function poseAction(woman, man) {
   }
 }
 
+function poseCloseup(woman, man) {
+  woman.root.p = [-0.156, 0, 0.07];
+  woman.root.r = [0, 0.30, 0];
+  woman.joints.head.r = [-0.025, -0.40, -0.035];
+  man.root.p = [0.167, 0.019, -0.065];
+  man.root.r = [0, -0.32, 0];
+  man.joints.head.r = [0.028, 0.45, 0.025];
+}
+
+function addContactShadows(scene, ...characters) {
+  for (const { root } of characters) {
+    part(scene, blobShadow(0.41, 0.46), null, [root.p[0], 0.012, root.p[2]], [1, 1, 0.74]);
+  }
+}
+
 export {
   SKIN, MAT, makeCanvas, sleeveTattooTexture, chestTattooTexture, tankTexture, dressTexture,
   buildFace, buildPistol, buildWoman, buildMan, poseDuo, poseAction,
@@ -709,15 +814,33 @@ function seeded(seed = 1) {
   return () => { state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state / 4294967296; };
 }
 
+const backdropQuad = plane(1, 1);
+const backdropBox = box(1, 1, 1);
+const neonColors = [[1, 0.05, 0.49], [0.04, 0.91, 1], [1, 0.53, 0.08]];
+const skylineBands = [[-16, 1.5, -16], [-13, 1.48, -8.5]];
+const signX = i => skylineBands[1][0] + i * skylineBands[1][1];
+const glowTextures = new Map();
+function glowSprite(color, alpha = 1) {
+  const key = cssRGB(color);
+  if (!glowTextures.has(key)) glowTextures.set(key, makeCanvas(64, 64, (ctx, w, h) => {
+    const glow = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+    glow.addColorStop(0, key);
+    glow.addColorStop(0.38, key.replace('rgb(', 'rgba(').replace(')', ',0.42)'));
+    glow.addColorStop(1, key.replace('rgb(', 'rgba(').replace(')', ',0)'));
+    ctx.fillStyle = glow; ctx.fillRect(0, 0, w, h);
+  }));
+  return { color: [1, 1, 1], unlit: true, transparent: true, alpha, tex: glowTextures.get(key) };
+}
+
 function skyGeo(pal) {
-  const geo = sphere(40, 48, 32);
+  const geo = sphere(46, 48, 64);
   geo.colors = new Float32Array(geo.positions.length);
   for (let i = 0; i < geo.positions.length; i += 3) {
-    const height = geo.positions[i + 1] / 40;
-    // Concentrate the warm transition around the visible horizon.
-    const color = height < 0.12
-      ? blendRGB(pal.skyBot, pal.skyMid, Math.max(0, (height + 0.12) / 0.24))
-      : blendRGB(pal.skyMid, pal.skyTop, Math.min(1, (height - 0.12) / 0.65));
+    const height = geo.positions[i + 1] / 46;
+    const band = Math.round((height + 0.08) * 16) / 16;
+    const clamp = t => Math.max(0, Math.min(1, t));
+    const color = blendRGB(blendRGB(pal.skyBot, pal.skyMid, clamp(band / 0.27)),
+      pal.skyTop, clamp((band - 0.27) / 0.34));
     geo.colors.set(color, i);
   }
   for (let i = 0; i < geo.indices.length; i += 3) {
@@ -725,60 +848,96 @@ function skyGeo(pal) {
   }
   return geo;
 }
-function skyDome(pal) {
+let cloudTexture;
+function skyDome(pal, night = pal === PALETTES.neon) {
   const root = group();
   part(root, skyGeo(pal), { color: [1, 1, 1], unlit: true, vertexColors: true });
-  const sunPos = [pal.lightDir[0] * 16, 4.0, -25];
-  part(root, disc(3.2, 64), { color: pal.sunCore, unlit: true }, sunPos);
-  part(root, disc(5.5, 64), { color: pal.sun, unlit: true, alpha: 0.18 },
-    [sunPos[0], sunPos[1], sunPos[2] - 0.08]);
+  const sunPos = [pal.lightDir[0] * 13, 6.6, -25];
+  part(root, disc(night ? 1.9 : 3.5, 48), emissiveMaterial(pal.sunCore, night ? 0.9 : 1.45), sunPos);
+  part(root, backdropQuad, glowSprite(pal.sun, 0.76), [sunPos[0], sunPos[1], -25.1],
+    night ? [8, 8, 1] : [15, 15, 1]);
+  cloudTexture ??= makeCanvas(128, 32, (ctx, w, h) => {
+    const random = seeded(77);
+    ctx.fillStyle = '#fff';
+    for (let i = 0; i < 16; i++) {
+      const t = (i + 1) / 17;
+      ctx.beginPath();
+      ctx.ellipse(w * t, h * (0.52 + random() * 0.21), 5 + random() * 9,
+        1 + Math.sin(t * Math.PI) * random() * 7, 0, 0, TAU);
+      ctx.fill();
+    }
+  });
+  const cloud = { color: blendRGB(pal.skyTop, pal.skyMid, 0.18), tex: cloudTexture,
+    unlit: true, transparent: true, alpha: night ? 0.54 : 0.72 };
+  for (const [x, y, w, h] of [[-14, 7.8, 11, 1.5], [-4, 5.7, 13, 1.15], [8, 8.1, 14, 1.9], [16, 5.2, 10, 1.0]])
+    part(root, backdropQuad, cloud, [x, y, -23.5], [w, h, 1]);
   return root;
 }
 function windowsTexture(seed = 1) {
   const random = seeded(seed);
-  return makeCanvas(256, 512, (ctx, w, h) => {
+  return makeCanvas(128, 256, (ctx, w, h) => {
     ctx.fillStyle = '#10152c'; ctx.fillRect(0, 0, w, h);
-    for (let y = 12; y < h - 8; y += 23) for (let x = 10; x < w - 8; x += 22) {
+    for (let y = 8; y < h - 8; y += 16) for (let x = 8; x < w - 8; x += 18) {
       const lit = random();
-      ctx.fillStyle = lit > 0.48 ? (lit > 0.83 ? '#80f9ed' : '#ffd790') : '#242b46';
-      ctx.fillRect(x, y, 9, 12);
+      ctx.fillStyle = lit > 0.28 ? (lit > 0.78 ? '#80f9ed' : lit > 0.49 ? '#ffd790' : '#da87ba') : '#252b46';
+      ctx.fillRect(x, y, 9, 7);
     }
   });
+}
+const skylineWindows = new Map();
+const signStencils = new Map();
+function signStencil(label) {
+  if (!signStencils.has(label)) signStencils.set(label, makeCanvas(128, 32, (ctx, w, h) => {
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(3, 3, w - 6, h - 6);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 18px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, w / 2, h / 2 + 1);
+  }));
+  return signStencils.get(label);
 }
 function skyline(pal, seed = 18) {
   const root = group();
   const random = seeded(seed);
-  const material = { color: blendRGB(pal.skyTop, [0.25, 0.3, 0.5], 0.4),
-    tex: windowsTexture(seed), emissive: [0.055, 0.045, 0.03], rimBoost: 0.15 };
-  for (let i = 0; i < 14; i++) {
-    const h = 2 + random() * 5;
-    const x = -14 + i * 28 / 13;
-    const z = -10 - random() * 4;
-    const w = 0.8 + random() * 1.05;
-    part(root, box(w, h, 0.9 + random()), material, [x, h / 2 - 0.1, z]);
-    if (i % 3 === 0) part(root, cylinder(0.025, 0.04, 0.7), MAT.gunmetal, [x, h + 0.2, z]);
-  }
-  const nearMaterial = { ...material,
-    color: blendRGB(material.color, [0.52, 0.55, 0.66], 0.25),
-    emissive: [0.11, 0.09, 0.065] };
-  const neon = [[1, 0.04, 0.55], [0.03, 0.9, 1], [1, 0.56, 0.06]];
-  for (let i = 0; i < 10; i++) {
-    const x = -12 + i * 2.65;
-    const h = 1.6 + random() * 3.1;
-    const z = -7.5 - random() * 0.5;
-    part(root, box(1.2 + random() * 0.7, h, 1), nearMaterial, [x, h / 2 - 0.1, z]);
-    if (i % 2 === 0) {
-      const color = neon[(i / 2) % 3];
-      part(root, box(0.48, 0.18, 0.06), { color, emissive: color, rimBoost: 0.2 },
-        [x + (random() - 0.5) * 0.5, h * (0.35 + random() * 0.4), z + 0.54]);
+  const roofs = [];
+  for (const [row, [left, spacing, depth]] of skylineBands.entries()) {
+    const buildings = [];
+    const windowSeed = seed + row;
+    if (!skylineWindows.has(windowSeed)) skylineWindows.set(windowSeed, windowsTexture(windowSeed));
+    for (let i = 0; i < (row ? 19 : 23); i++) {
+      const x = left + i * spacing;
+      const z = depth - random() * (row ? 0.65 : 2.1);
+      const h = row ? 1.65 + random() * 2.1 : 2.8 + random() ** 1.5 * 4.8;
+      const w = 0.86 + random() * 0.53;
+      const d = 0.75 + random() * 0.6;
+      buildings.push(xform(backdropBox, { p: [x, h / 2 - 0.1, z], s: [w, h, d] }));
+      roofs.push(xform(backdropBox, { p: [x, h - 0.08, z], s: [w * 1.06, 0.09, d * 1.06] }));
+      if (i % 4 !== 1) {
+        const crown = 0.15 + random() * 0.52;
+        roofs.push(xform(backdropBox, { p: [x - w * 0.12, h + crown / 2 - 0.08, z],
+          s: [w * (i % 4 === 0 ? 0.57 : 0.31), crown, d * 0.65] }));
+        if (i % 4 === 0) roofs.push(xform(backdropBox, { p: [x - w * 0.12, h + crown + 0.27, z],
+          s: [0.035, 0.7, 0.035] }));
+      }
+      if (row && i % 2 === 0) {
+        const n = i / 2;
+        const color = neonColors[n % neonColors.length];
+        const y = h * (0.28 + random() * 0.36);
+        const zFront = z + d / 2;
+        const label = ['MIRAGE', 'TIDE', 'SOL', 'MOTEL', 'LUNAR'][n % 5];
+        part(root, backdropQuad, emissiveMaterial(color, 1.8, { transparent: true, tex: signStencil(label) }),
+          [x, y, zFront + 0.015], [0.76, 0.23, 1]);
+        part(root, backdropQuad, glowSprite(color, 0.42), [x, y, zFront + 0.008], [2.1, 0.96, 1]);
+      }
     }
+    part(root, merge(buildings), { color: row ? [0.92, 0.88, 1] : [0.55, 0.59, 0.79],
+      unlit: true, tex: skylineWindows.get(windowSeed) });
   }
+  part(root, merge(roofs), { color: blendRGB(pal.skyTop, [0.06, 0.055, 0.12], 0.72), unlit: true });
   return root;
 }
-function palmTree(h = 4) {
+function palmTree(h = 4, silhouette = false) {
   const root = group();
-  const trunk = pigment([0.12, 0.10, 0.13]);
-  const leafMat = pigment([0.06, 0.14, 0.10], 1.0);
+  const trunk = silhouette ? { color: [0.065, 0.046, 0.092], unlit: true } : pigment([0.12, 0.10, 0.13]);
+  const leafMat = silhouette ? trunk : pigment([0.06, 0.14, 0.10], 1.0);
   const lean = joint(root, [0, 0, 0]);
   lean.r[2] = -0.10;
   for (let i = 0; i < 5; i++) {
@@ -796,28 +955,86 @@ function palmTree(h = 4) {
     part(frond, box(0.15, 0.025, 0.85), leafMat, [0, 0.25, 0.45], undefined, [-0.35, 0.35, 0]);
   }
   for (const x of [-0.12, 0.12]) part(crown, sphere(0.13), trunk, [x, -0.12, 0.08]);
+  if (silhouette) {
+    const flatten = n => {
+      const meshes = n.children.flatMap(flatten);
+      if (n.geometry) meshes.push(n.geometry);
+      return meshes.map(mesh => xform(mesh, n));
+    };
+    const mesh = merge(flatten(lean));
+    root.children.length = 0;
+    part(root, mesh, trunk);
+  }
   return root;
 }
+const groundTextures = new WeakMap();
 function groundPlane(pal, mode = 'street') {
+  if (!groundTextures.has(pal)) groundTextures.set(pal, new Map());
+  const textures = groundTextures.get(pal);
   const random = seeded(53);
-  const tex = makeCanvas(512, 512, (ctx, w, h) => {
+  const sand = mode === 'sand';
+  const water = mode === 'water';
+  const width = sand ? 34 : 48;
+  const depth = sand ? 11.5 : 40;
+  const center = sand ? 0.25 : -8;
+  if (!textures.has(mode)) textures.set(mode, makeCanvas(512, 512, (ctx, w, h) => {
+    const pixelX = x => w * (0.5 + x / width);
+    const pixelZ = z => h * (0.5 + (z - center) / depth);
     const gradient = ctx.createLinearGradient(0, 0, 0, h);
-    gradient.addColorStop(0, cssRGB(mode === 'water' ? pal.water : pal.ground));
-    gradient.addColorStop(1, cssRGB(blendRGB(mode === 'water' ? pal.water : pal.ground, pal.skyBot, 0.24)));
+    const base = sand ? [0.76, 0.53, 0.36] : water ? pal.water : pal.ground;
+    gradient.addColorStop(0, cssRGB(sand ? [0.43, 0.29, 0.29] : base));
+    gradient.addColorStop(sand ? 0.27 : 1, cssRGB(blendRGB(base, pal.skyBot, sand ? 0.32 : 0.18)));
     ctx.fillStyle = gradient; ctx.fillRect(0, 0, w, h);
-    const pool = ctx.createRadialGradient(255, 280, 1, 255, 280, 195);
-    pool.addColorStop(0, mode === 'water' ? '#fff0a55a' : '#ff648d55');
-    pool.addColorStop(1, '#ff648d00'); ctx.fillStyle = pool; ctx.fillRect(0, 0, w, h);
-    for (let i = 0; i < 240; i++) {
-      const y = random() * h; const width = 4 + random() * (mode === 'water' ? 75 : 130);
-      ctx.globalAlpha = 0.08 + random() * 0.35;
-      ctx.fillStyle = i % 3 === 0 ? '#ff75ba' : cssRGB(pal.sunCore);
-      ctx.fillRect(256 + (random() - 0.5) * 150 - width / 2, y, width, 0.5 + random() * 2);
+    if (sand) {
+      for (let i = 0; i < 1800; i++) {
+        ctx.globalAlpha = random() * 0.25;
+        ctx.fillStyle = i % 2 ? '#fff1c2' : '#654331';
+        ctx.fillRect(random() * w, random() * h, 1 + random() * 3, 1);
+      }
+      for (let wave = 0; wave < 3; wave++) {
+        ctx.globalAlpha = [0.86, 0.29, 0.13][wave];
+        ctx.strokeStyle = '#d7fff5'; ctx.lineWidth = [4, 2, 1][wave]; ctx.beginPath();
+        for (let x = 0; x <= w; x += 2) {
+          const y = 5 + wave * 8 + 1.8 * Math.sin(x * 0.06 + wave) + 1.5 * Math.cos(x * 0.15);
+          if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+    } else if (water) {
+      const glintX = pixelX(pal.lightDir[0] * 7);
+      for (let i = 0; i < 470; i++) {
+        const y = random() * h;
+        const spread = 10 + y * 0.15;
+        const x = i % 3 ? glintX + (random() - 0.5) * spread : random() * w;
+        const ripple = (2 + random() * 25) * (0.35 + y / h);
+        ctx.globalAlpha = i % 3 ? 0.12 + random() * 0.44 : 0.09 + random() * 0.22;
+        ctx.fillStyle = i % 3 ? cssRGB(pal.sunCore) : '#86e4df';
+        ctx.fillRect(x - ripple / 2, y, ripple, 0.6 + random() * 1.3);
+      }
+    } else {
+      for (let i = 0; i < 19; i += 2) {
+        const x = pixelX(signX(i));
+        const y = pixelZ(-7.8);
+        const color = cssRGB(neonColors[i / 2 % neonColors.length]);
+        const reflection = ctx.createLinearGradient(0, y, 0, y + 170);
+        reflection.addColorStop(0, color);
+        reflection.addColorStop(0.48, color);
+        reflection.addColorStop(1, color.replace('rgb(', 'rgba(').replace(')', ',0)'));
+        ctx.fillStyle = reflection;
+        for (let j = 0; j < 25; j++) {
+          const offset = random() * 150;
+          const streak = 0.5 + random() * 2.8;
+          ctx.globalAlpha = (0.13 + random() * 0.32) * (1 - offset / 165);
+          ctx.fillRect(x + (random() - 0.5) * (8 + offset * 0.1), y + offset, streak, 8 + random() * 42);
+        }
+      }
+      ctx.globalAlpha = 0.25; ctx.fillStyle = '#e2b991';
+      for (let i = 0; i < 7; i++) ctx.fillRect(pixelX(2.4), pixelZ(-7 + i * 2.5), 1.6, 13);
     }
     ctx.globalAlpha = 1;
-  });
-  return node(plane(80, 40), { color: [1, 1, 1], tex, rimBoost: 0.35 },
-    { p: [0, -0.035, -8], r: [-Math.PI / 2, 0, 0] });
+  }));
+  return node(backdropQuad, { color: [1, 1, 1], tex: textures.get(mode), unlit: true },
+    { p: [0, sand ? 0.005 : -0.035, center], s: [width, depth, 1], r: [-Math.PI / 2, 0, 0] });
 }
 
 // A small seated figure uses the same face sculpt as the key-art characters.
@@ -828,7 +1045,7 @@ function buildFigure({ shirt = [0.04, 0.5, 0.5], pants = [0.08, 0.12, 0.22],
   part(root, lathe([[0, 0], [0.14, 0], [0.17, 0.30], [0.12, 0.36], [0, 0.36]], 12),
     cloth, [0, 0.23, 0], [1, 1, 0.72]);
   const head = buildFace({ skin: skinMat, lip: MAT.lip.him, hair: MAT.hair.him });
-  head.p = [0, 0.75, 0]; head.s = 0.24; root.children.push(head);
+  head.p = [0, 0.75, 0]; head.s = 0.24; head.isHead = true; root.children.push(head);
   part(head, sphere(0.51), MAT.hair.him, [0, 0.18, -0.04], [1, 0.72, 1]);
   if (cap) {
     part(head, sphere(0.54), MAT.gunmetal, [0, 0.23, 0], [1, 0.7, 1]);
@@ -846,14 +1063,21 @@ function buildFigure({ shirt = [0.04, 0.5, 0.5], pants = [0.08, 0.12, 0.22],
 }
 const glassMat = { color: [0.5, 0.88, 0.95], alpha: 0.40, rimBoost: 1.7 };
 const foamMat = { color: [0.86, 1, 1], unlit: true, alpha: 0.36 };
+let wakeTexture;
 function speedboat() {
   const root = group();
-  const hull = pigment([0.92, 0.90, 0.78]);
-  part(root, box(1.05, 0.30, 2.0), hull, [0, 0.30, 0]);
-  part(root, box(0.74, 0.27, 0.74), hull, [0, 0.32, 1.02], [1, 1, 1], [0, Math.PI / 4, 0]);
-  part(root, box(1.08, 0.065, 1.85), pigment([0.04, 0.65, 0.67]), [0, 0.47, 0.04]);
-  part(root, box(0.15, 0.02, 1.8), pigment([1, 0.23, 0.43]), [0, 0.51, 0.05]);
-  part(root, plane(0.92, 0.40), glassMat, [0, 0.76, 0.45], undefined, [-0.35, 0, 0]);
+  const hull = { color: [0.91, 0.92, 0.81], rimBoost: 1.7, shininess: 48, specMul: 1.8 };
+  const hullBand = { ...hull, color: [0.025, 0.62, 0.67] };
+  const hullProfile = [[-1.08, 0], [-1.075, 1, 0.48, 0.15], [-0.83, 1, 0.55, 0.20],
+    [0.33, 1, 0.53, 0.23], [0.88, 1, 0.38, 0.21], [1.28, 1, 0.14, 0.13], [1.48, 0]];
+  part(root, profileTube(hullProfile, 24), hull, [0, 0.31, 0], undefined, [Math.PI / 2, 0, 0]);
+  part(root, profileTube(hullProfile, 24), hullBand, [0, 0.45, 0], [1.015, 1, 0.26], [Math.PI / 2, 0, 0]);
+  part(root, backdropBox, pigment([1, 0.23, 0.43]), [0, 0.516, 0.83], [0.13, 0.022, 0.74]);
+  const screen = joint(root, [0, 0.72, 0.45]); screen.r[0] = -0.42;
+  part(screen, backdropQuad, { ...glassMat, shininess: 58, specMul: 2.2 }, undefined, [0.92, 0.35, 1]);
+  part(screen, backdropBox, MAT.silver, [0, 0.175, 0], [0.94, 0.022, 0.025]);
+  for (const side of [-1, 1]) part(screen, backdropBox, MAT.silver,
+    [side * 0.45, 0, 0], [0.022, 0.35, 0.025]);
   for (const x of [-0.25, 0.25]) {
     part(root, box(0.32, 0.12, 0.40), hull, [x, 0.56, -0.20]);
     part(root, box(0.32, 0.35, 0.10), hull, [x, 0.70, -0.38]);
@@ -864,39 +1088,66 @@ function speedboat() {
   const driver = buildFigure({ cap: true, shirt: MAT.shirt.color }); driver.p = [-0.24, 0.57, -0.16]; driver.s = 0.66;
   root.children.push(driver);
   part(root, torus(0.12, 0.017), MAT.gunmetal, [-0.24, 0.85, 0.22], undefined, [-0.5, 0, 0]);
-  for (const side of [-1, 1]) part(root, plane(0.42, 3.8), foamMat,
-    [side * 0.95, 0.01, -2.3], undefined, [-Math.PI / 2, 0, side * 0.30]);
-  for (let i = 0; i < 12; i++) part(root, box(0.26, 0.04, 0.18), foamMat,
-    [Math.sin(i * 2.4) * 0.65, 0, -1.35 - i * 0.19]);
-  for (let i = 0; i < 10; i++) part(root, box(0.06, 0.08, 0.05), foamMat,
-    [Math.sin(i * 2.4) * (0.4 + i * 0.05), 0.08 + Math.sin(i / 9 * Math.PI) * 0.55, -1.3 - i * 0.16],
-    undefined, [0.2 * i, 0, 0.4 * i]);
+  for (let i = 0; i < 16; i++) part(root, backdropBox, foamMat,
+    [Math.sin(i * 2.4) * (0.18 + i * 0.026), 0.02 + Math.sin(i / 16 * Math.PI) * 0.27, -1.12 - i * 0.06],
+    [0.05, 0.045, 0.055], [0.2 * i, 0, 0.4 * i]);
   return root;
+}
+function boatWake(boat) {
+  wakeTexture ??= makeCanvas(256, 256, (ctx, w, h) => {
+    const random = seeded(14);
+    ctx.fillStyle = '#dcfff8';
+    for (let i = 0; i < 760; i++) {
+      const t = random() * 0.97;
+      const side = i % 2 ? 1 : -1;
+      const lane = i % 5 ? 0.075 + t * 0.33 : t * 0.15;
+      const spread = 8 + t * 19;
+      ctx.globalAlpha = (0.2 + random() * 0.64) * (1 - t) ** 0.85;
+      ctx.fillRect(w * (0.5 + side * lane) + (random() - 0.5) * spread,
+        h * (1 - t) - 3, 2 + random() * (4 + t * 10), 0.7 + random() * 2.6);
+    }
+  });
+  const wake = group({ p: [boat.p[0], -0.017, boat.p[2]], r: [0, boat.r[1], 0] });
+  part(wake, backdropQuad, { ...foamMat, tex: wakeTexture, alpha: 0.85 }, [0, 0, -3.75],
+    [4.1, 5.1, 1], [-Math.PI / 2, 0, 0]);
+  return wake;
 }
 function supercar() {
   const root = group({ r: [0, -0.5, 0] });
-  const paint = { color: [0.91, 0.12, 0.42], rimBoost: 1.8 };
-  const glass = { color: [0.035, 0.09, 0.16], rimBoost: 1.7 };
-  part(root, box(2, 0.32, 0.92), paint, [0, 0.30, 0]);
-  part(root, box(0.78, 0.10, 0.86), paint, [0.65, 0.54, 0], undefined, [0, 0, -0.13]);
-  part(root, box(0.85, 0.32, 0.76), glass, [-0.12, 0.67, 0]);
-  part(root, box(0.60, 0.04, 0.72), paint, [-0.20, 0.85, 0]);
+  const paint = { color: [0.93, 0.075, 0.29], rimBoost: 2.2, shininess: 47, specMul: 1.65 };
+  const glass = { color: [0.038, 0.11, 0.19], rimBoost: 1.8, shininess: 55, specMul: 2 };
+  const body = profileTube([[-1.17, 0], [-1.13, 1, 0.165, 0.43], [-0.94, 1, 0.22, 0.53],
+    [-0.54, 1, 0.20, 0.51], [0.1, 1, 0.165, 0.47], [0.62, 1, 0.18, 0.52],
+    [0.94, 1, 0.123, 0.48], [1.09, 1, 0.075, 0.39], [1.11, 0]], 20);
+  part(root, body, paint, [0, 0.315, 0], undefined, [0, 0, -Math.PI / 2]);
+  const canopy = profileTube([[-0.76, 0], [-0.64, 1, 0.10, 0.43], [-0.34, 1, 0.27, 0.39],
+    [0.07, 1, 0.26, 0.36], [0.48, 1, 0.08, 0.43], [0.54, 0]], 20);
+  part(root, canopy, glass, [0, 0.47, 0], undefined, [0, 0, -Math.PI / 2]);
+  part(root, backdropBox, paint, [-0.16, 0.729, 0], [0.33, 0.027, 0.37]);
+  const tire = torus(0.163, 0.052, 10, 24);
+  const wheel = merge([torus(0.145, 0.013, 8, 24), disc(0.042, 16),
+    ...Array.from({ length: 7 }, (_, i) => {
+      const a = i * TAU / 7;
+      return xform(backdropBox, { p: [Math.cos(a) * 0.084, Math.sin(a) * 0.084, 0],
+        s: [0.118, 0.025, 0.024], r: [0, 0, a + 0.14] });
+    })]);
+  const brake = disc(0.137, 24);
+  const lamp = emissiveMaterial([0.72, 0.92, 1], 2.4);
   for (const side of [-1, 1]) {
-    part(root, box(1.70, 0.08, 0.09), paint, [0, 0.23, side * 0.48]);
-    part(root, box(0.04, 0.22, 0.04), MAT.gunmetal, [-0.85, 0.65, side * 0.29]);
+    part(root, backdropBox, MAT.gunmetal, [0, 0.19, side * 0.46], [1.18, 0.062, 0.09]);
+    part(root, backdropBox, MAT.gunmetal, [-0.90, 0.61, side * 0.32], [0.085, 0.25, 0.035], [0, 0, -0.20]);
+    part(root, backdropBox, MAT.gunmetal, [0.42, 0.32, side * 0.487], [0.26, 0.084, 0.035], [0, 0, -0.21]);
     for (const x of [-0.64, 0.65]) {
-      part(root, cylinder(0.21, 0.21, 0.14, 20), MAT.boots, [x, 0.23, side * 0.47], undefined, [Math.PI / 2, 0, 0]);
-      part(root, disc(0.125), MAT.silver, [x, 0.23, side * 0.55]);
+      const rear = side === -1 ? [0, Math.PI, 0] : undefined;
+      part(root, tire, MAT.boots, [x, 0.216, side * 0.503], [1, 1, 1.32]);
+      part(root, brake, MAT.gunmetal, [x, 0.216, side * 0.532], undefined, rear);
+      part(root, wheel, MAT.silver, [x, 0.216, side * 0.561], undefined, rear);
     }
-    part(root, box(0.04, 0.07, 0.24), { color: [1, 0.94, 0.65], emissive: [0.7, 0.65, 0.35] },
-      [1.01, 0.44, side * 0.28]);
-    part(root, plane(1.8, 0.65), { color: [1, 0.86, 0.60], alpha: 0.09, unlit: true },
-      [1.65, 0.005, side * 0.28], undefined, [-Math.PI / 2, 0, 0]);
+    part(root, backdropBox, lamp, [0.975, 0.403, side * 0.298], [0.13, 0.023, 0.22],
+      [0, side * -0.46, -0.16]);
   }
-  part(root, box(0.26, 0.05, 1.12), MAT.gunmetal, [-0.85, 0.79, 0]);
-  part(root, box(0.025, 0.06, 0.76), { color: [1, 0.03, 0.08], emissive: [0.7, 0, 0.03] }, [-1.01, 0.43, 0]);
-  part(root, plane(2.4, 1.25), { color: [1, 0.03, 0.62], alpha: 0.25, unlit: true },
-    [0, 0.01, 0], undefined, [-Math.PI / 2, 0, 0]);
+  part(root, backdropBox, MAT.gunmetal, [-0.94, 0.74, 0], [0.26, 0.048, 1.10], [0, 0, 0.12]);
+  part(root, backdropBox, emissiveMaterial([1, 0.025, 0.10], 1.45), [-1.09, 0.414, 0], [0.025, 0.038, 0.70]);
   return root;
 }
 function motorcycle() {
@@ -918,26 +1169,36 @@ function motorcycle() {
   const rider = buildFigure({ shirt: jacket });
   rider.p = [0.35, 0.54, 0]; rider.s = 0.72; rider.r = [0, Math.PI / 2, -0.35];
   bike.children.push(rider);
-  // Full closed helmet shell covers the standard face, including its rear hemisphere.
-  part(rider, sphere(0.30, 24, 18), { color: [0.93, 0.22, 0.47], rimBoost: 2 },
-    [0, 0.75, 0], [1, 0.95, 1.05]);
-  part(rider, box(0.30, 0.10, 0.05), { color: [0.025, 0.055, 0.10], rimBoost: 2 }, [0, 0.78, 0.29]);
+  const helmet = joint(rider, [0, 0.75, 0]); helmet.isHead = true;
+  const shell = sphere(1, 24, 16);
+  part(helmet, shell, { color: [0.93, 0.22, 0.47], rimBoost: 2, shininess: 38 },
+    undefined, [0.30, 0.285, 0.315]);
+  part(helmet, shell, { color: [0.022, 0.085, 0.16], rimBoost: 2.5, shininess: 56, specMul: 2.4 },
+    [0, 0.027, 0.18], [0.257, 0.111, 0.166]);
+  part(helmet, shell, { color: [0.25, 0.65, 0.78], alpha: 0.54, unlit: true },
+    [0, 0.083, 0.316], [0.141, 0.008, 0.014], [0, 0, 0.10]);
   return root;
 }
 function seaplane() {
-  const root = group({ r: [0, -0.25, 0.18] });
+  const root = group({ r: [0.08, -0.40, 0.33] });
   const paint = pigment([0.94, 0.80, 0.47]); const stripe = pigment([0.03, 0.52, 0.57]);
   part(root, lathe([[0, -1.35], [0.07, -1.15], [0.23, -0.35], [0.27, 0.45],
     [0.20, 0.90], [0, 1.02]], 20), paint, [0, 0, 0], undefined, [Math.PI / 2, 0, 0]);
   part(root, box(0.44, 0.32, 0.66), glassMat, [0, 0.21, 0.23]);
-  part(root, box(2.6, 0.06, 0.50), paint, [0, 0.61, 0.15]);
-  part(root, box(2.65, 0.025, 0.12), stripe, [0, 0.65, 0.30]);
+  part(root, sphere(1, 24, 10), paint, [0, 0.61, 0.15], [1.39, 0.062, 0.32]);
+  part(root, sphere(1, 24, 10), stripe, [0, 0.626, 0.25], [1.30, 0.052, 0.095]);
   part(root, box(0.9, 0.045, 0.30), stripe, [0, 0.15, -1.0]);
   part(root, box(0.06, 0.43, 0.40), stripe, [0, 0.30, -1.05]);
+  const pontoon = profileTube([[-0.74, 0], [-0.6, 1, 0.105, 0.066], [-0.24, 1, 0.12, 0.096],
+    [0.36, 1, 0.116, 0.092], [0.66, 1, 0.074, 0.07], [0.82, 0]], 18);
+  const strut = cylinder(0.025, 0.025, 0.48, 10);
+  const navLights = [emissiveMaterial([1, 0.06, 0.09], 1.8), emissiveMaterial([0.12, 1, 0.52], 1.8)];
   for (const side of [-1, 1]) {
     part(root, cylinder(0.025, 0.025, 0.48), MAT.silver, [side * 0.39, 0.34, 0.10], undefined, [0, 0, side * 0.3]);
-    part(root, cylinder(0.10, 0.12, 1.50), stripe, [side * 0.42, -0.60, 0.05], undefined, [Math.PI / 2, 0, 0]);
-    for (const z of [-0.35, 0.4]) part(root, cylinder(0.025, 0.025, 0.48), MAT.silver, [side * 0.32, -0.34, z], undefined, [0, 0, side * 0.3]);
+    part(root, pontoon, stripe, [side * 0.45, -0.60, 0.05], undefined, [Math.PI / 2, 0, 0]);
+    for (const z of [-0.35, 0.4]) part(root, strut, MAT.silver,
+      [side * 0.36, -0.34, z], undefined, [0, 0, side * 0.36]);
+    part(root, backdropBox, navLights[(side + 1) / 2], [side * 1.33, 0.625, 0.24], [0.07, 0.045, 0.09]);
   }
   part(root, disc(0.42, 40), { color: [0.82, 0.95, 1], alpha: 0.22, unlit: true }, [0, 0, 1.04]);
   part(root, cylinder(0, 0.11, 0.25), MAT.silver, [0, 0, 1.12], undefined, [Math.PI / 2, 0, 0]);
@@ -947,6 +1208,7 @@ function seaplane() {
 const CAMERAS = {
   duo: { pos: [0, 1.30, 4.9], target: [0, 0.98, 0], fov: 38 },
   'duo-action': { pos: [0, 1.25, 4.2], target: [0, 1, 0], fov: 40 },
+  closeup: { pos: [0, 1.775, 0.77], target: [0, 1.770, 0], fov: 34, near: 0.04 },
   'qa-her': { pos: [0, 1.70, 1.45], target: [0, 1.62, 0], fov: 36 },
   'qa-him': { pos: [0, 1.82, 1.50], target: [0, 1.74, 0], fov: 36 },
   'qa-duo': { pos: [0, 1.45, 3.05], target: [0, 1.22, 0], fov: 37 },
@@ -958,26 +1220,38 @@ const CAMERAS = {
   beach: { pos: [0, 1.7, 7.5], target: [0, 1.3, -4], fov: 46 },
 };
 function buildScene(preset, pal) {
-  const root = group(); root.children.push(skyDome(pal));
+  const backdrop = preset === 'closeup' ? PALETTES.neon : pal;
+  const root = group(); root.children.push(skyDome(backdrop));
   const addPalms = placements => placements.forEach(([x, z, h]) => {
     const palm = palmTree(h); palm.p = [x, 0, z]; root.children.push(palm);
   });
   if (preset !== 'beach') {
-    const city = skyline(pal, 18);
+    const city = skyline(backdrop, 18);
     if (preset === 'boat') { city.p = [-12, -0.4, -9]; city.s = 0.85; }
     if (preset === 'plane') city.p = [0, -7, -12];
+    if (preset === 'closeup') { city.p = [0.18, 0.60, -0.30]; city.s = 0.34; }
     root.children.push(city);
+    if (preset !== 'boat' && preset !== 'plane' && preset !== 'closeup') {
+      const random = seeded(114);
+      for (let i = 0; i < 9; i++) {
+        const palm = palmTree(2.8 + random() * 1.5, true);
+        palm.p = [-10 + i * 2.5 + random() * 0.35, 0, -6.55 + random() * 0.25];
+        palm.r[1] = random() * TAU;
+        root.children.push(palm);
+      }
+    }
   }
   if (preset === 'city') {
     root.children.push(groundPlane(pal));
     addPalms([[-4.5, -5.4, 5], [4.8, -5.6, 4.4], [2.7, -5.8, 3.8]]);
   } else if (preset === 'beach') {
     root.children.push(groundPlane(pal, 'water'));
-    part(root, plane(80, 11.5), pigment([0.85, 0.67, 0.46]), [0, 0.005, 0.25], undefined, [-Math.PI / 2, 0, 0]);
+    root.children.push(groundPlane(pal, 'sand'));
     addPalms([[-3, -5.4, 4.5], [-4.1, -5.6, 3.7], [4.2, -5.8, 4.8]]);
   } else if (preset === 'plane') {
     root.children.push(groundPlane(pal, 'water'));
     const aircraft = seaplane(); aircraft.p = [-0.3, 1.25, 0]; aircraft.s = 0.85; root.children.push(aircraft);
+    root.subjects = aircraft;
     addPalms([[-4.4, -5.4, 0.8], [4.6, -5.6, 0.9]]);
   } else if (preset === 'qa-her') {
     root.children.push(groundPlane(pal));
@@ -990,6 +1264,8 @@ function buildScene(preset, pal) {
     aimArm(woman.root, woman.joints.armR, [-0.15, 0, -0.55], -1.85, [-0.08, 1, 0.05]);
     aimArm(woman.root, woman.joints.armL, [-0.55, 0, 0.30], -0.32, [-0.15, -1, 0.65]);
     root.children.push(woman.root);
+    root.subjects = woman.root; root.fitHeads = true;
+    addContactShadows(root, woman);
   } else if (preset === 'qa-him') {
     root.children.push(groundPlane(pal));
     addPalms([[-3.4, -5.4, 4.6], [3.8, -5.6, 5.0], [5.5, -5.8, 3.6]]);
@@ -1001,33 +1277,37 @@ function buildScene(preset, pal) {
     aimArm(man.root, man.joints.armL, [-0.15, 0, 0.55], -1.85, [0.08, 1, 0.05]);
     aimArm(man.root, man.joints.armR, [-0.20, 0, -0.12], -0.32, [0.10, -1, 0.30]);
     root.children.push(man.root);
+    root.subjects = man.root; root.fitHeads = true;
+    addContactShadows(root, man);
   } else if (preset === 'qa-duo') {
     root.children.push(groundPlane(pal));
     addPalms([[-3.4, -5.4, 4.6], [3.8, -5.6, 5.0], [5.5, -5.8, 3.6]]);
     const woman = buildWoman(); const man = buildMan();
     poseDuo(woman, man);
-    root.children.push(group({ children: [woman.root, man.root] }));
+    root.subjects = group({ children: [woman.root, man.root] });
+    root.children.push(root.subjects);
+    addContactShadows(root, woman, man);
   } else {
     root.children.push(groundPlane(pal, preset === 'boat' ? 'water' : 'street'));
-    if (preset === 'duo' || preset === 'duo-action') {
+    if (preset === 'duo' || preset === 'duo-action' || preset === 'closeup') {
       addPalms([[-3.4, -5.4, 4.6], [3.8, -5.6, 5.0], [5.5, -5.8, 3.6]]);
       const woman = buildWoman(); const man = buildMan();
-      (preset === 'duo' ? poseDuo : poseAction)(woman, man);
+      (preset === 'closeup' ? poseCloseup : preset === 'duo' ? poseDuo : poseAction)(woman, man);
       const subjects = group({ children: [woman.root, man.root] });
       root.children.push(subjects); root.subjects = subjects;
+      root.fitHeads = preset === 'closeup';
+      addContactShadows(root, woman, man);
     } else if (preset === 'boat') {
       const boat = speedboat(); boat.p = [0.25, 0.04, 0]; boat.r = [Math.PI / 30, -0.35, -Math.PI / 45];
-      boat.s = 1.2; root.children.push(boat); root.subjects = boat;
+      boat.s = 1.2; root.children.push(boatWake(boat), boat); root.subjects = boat;
     } else if (preset === 'car') {
       addPalms([[-3.3, -5.4, 4.2], [4.2, -5.6, 5]]);
-      for (const side of [-1, 1]) {
-        const blocks = skyline(pal, side + 40); blocks.s = 0.55; blocks.p = [side * 9, 0, 0];
-        root.children.push(blocks);
-      }
       const car = supercar(); car.s = 1.15; root.children.push(car); root.subjects = car;
+      part(root, blobShadow(1, 0.67), null, [0, -0.022, 0], [1.54, 1, 0.78], car.r);
     } else if (preset === 'moto') {
       addPalms([[-4, -5.4, 4.7], [4, -5.6, 4.2]]);
       const moto = motorcycle(); root.children.push(moto); root.subjects = moto;
+      part(root, blobShadow(1, 0.56), null, [-0.20, -0.022, 0], [1.14, 1, 0.43]);
     }
   }
   return root;
@@ -1040,27 +1320,30 @@ function framedCamera(root, base, aspect) {
   const view = mat4LookAt(base.pos, base.target);
   const points = [];
   const transformPoint = (m, x, y, z) => [0, 1, 2].map(i => m[i] * x + m[4 + i] * y + m[8 + i] * z + m[12 + i]);
-  function visit(n, parent) {
+  function visit(n, parent, inHead = false) {
+    inHead ||= n.isHead === true;
     let m = mat4Translate(mat4Identity(), ...n.p);
     m = mat4RotateX(m, n.r[0]); m = mat4RotateY(m, n.r[1]); m = mat4RotateZ(m, n.r[2]);
     m = mat4Scale(m, ...(typeof n.s === 'number' ? [n.s, n.s, n.s] : n.s));
     m = mat4Multiply(parent, m);
-    if (n.geometry) for (let i = 0; i < n.geometry.positions.length; i += 3) {
+    if (n.geometry && (inHead || !root.fitHeads)) for (let i = 0; i < n.geometry.positions.length; i += 3) {
       const p = transformPoint(m, ...n.geometry.positions.subarray(i, i + 3));
-      points.push(transformPoint(view, ...p));
+      points.push([...transformPoint(view, ...p), inHead]);
     }
-    n.children.forEach(child => visit(child, m));
+    n.children.forEach(child => visit(child, m, inHead));
   }
   visit(root.subjects, mat4Identity());
   const tan = Math.tan(base.fov * Math.PI / 360);
   let retreat = 0;
-  for (const [x, y, z] of points) {
+  for (const [x, y, z, inHead] of points) {
     retreat = Math.max(retreat, Math.abs(x) / (tan * aspect * 0.88) + z,
-      y / (tan * 0.86) + z, -y / (tan * 0.98) + z);
+      y / (tan * 0.86) + z, -y / (tan * (inHead ? 0.86 : 0.98)) + z,
+      (base.near ?? 0.1) + 0.01 + z);
   }
   if (retreat <= 0) return base;
   const distance = Math.hypot(...base.pos.map((v, i) => v - base.target[i]));
-  return { ...base, pos: base.pos.map((v, i) => v + (v - base.target[i]) / distance * retreat) };
+  return { ...base, far: Math.max(base.far ?? 1000, distance + retreat + 60),
+    pos: base.pos.map((v, i) => v + (v - base.target[i]) / distance * retreat) };
 }
 const sceneCanvasCache = new Map();
 const sceneRootCache = new Map();
@@ -1096,10 +1379,9 @@ function getSceneCanvas(preset, w, h, gradeKey = 'sunset') {
     camera = { ...camera, target, fov: aspect > 1.6 ? 44 : camera.fov,
       pos: camera.pos.map((v, i) => target[i] + (v - camera.target[i]) * distScale) };
   }
-  // The vertex fit retains 7% top clearance (at least 6% above hair),
-  // including raised muzzles, at every aspect ratio.
+  const keyLight = preset === 'closeup' ? PALETTES.golden : pal;
   sharedSceneRenderer.render(root, framedCamera(root, camera, aspect), {
-    lightDir: pal.lightDir, lightColor: pal.lightColor, skyColor: pal.skyAmb,
+    lightDir: keyLight.lightDir, lightColor: keyLight.lightColor, skyColor: pal.skyAmb,
     groundColor: pal.groundAmb, rimColor: pal.rim, fogColor: pal.fog,
     ambient: 0.72, fogDensity: 0.008,
   });
@@ -1115,6 +1397,7 @@ function getSceneCanvas(preset, w, h, gradeKey = 'sunset') {
 function listScenes() {
   return [
     { key: 'duo', label: '3D Duo key art' }, { key: 'duo-action', label: 'Duo in action' },
+    { key: 'closeup', label: 'Duo hero close-up' },
     { key: 'boat', label: 'Speedboat' }, { key: 'car', label: 'Supercar' },
     { key: 'moto', label: 'Wheelie' }, { key: 'plane', label: 'Seaplane' },
     { key: 'city', label: 'Skyline' }, { key: 'beach', label: 'Beach palms' },

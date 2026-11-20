@@ -2,9 +2,10 @@ const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
 const panelCounts = {
   'hero-slash': 4, triptych: 3, quad: 4, shards: 5, 'cover-lines': 3,
   'duo-slash': 2, 'big-top': 4, 'l-frame': 4, 'mosaic-6': 6,
-  spotlight: 5, 'twin-towers': 3, finale: 9,
+  spotlight: 5, 'twin-towers': 3, finale: 9, keyart: 5,
 };
 const SCENES = {
+  keyart: ['closeup', 'duo-action', 'car', 'boat', 'city'],
   finale: ['city', 'plane', 'boat', 'car', 'duo', 'moto', 'beach', 'duo-action', 'city'],
   'hero-slash': ['duo', 'boat', 'car', 'moto'],
   quad: ['duo', 'car', 'boat', 'moto'],
@@ -32,7 +33,7 @@ export async function applyShotMode(api) {
     const w = Number(query.get('w'));
     const h = Number(query.get('h'));
     api.setSize(w || 1920, h || 1080);
-    const coverLayout = layout === 'finale-nine' ? 'finale' : layout || 'finale';
+    const coverLayout = layout === 'finale-nine' ? 'finale' : layout || 'keyart';
     const count = Object.hasOwn(panelCounts, coverLayout) ? panelCounts[coverLayout] : 1;
     let presets = Object.hasOwn(SCENES, coverLayout) ? SCENES[coverLayout] :
       Array.from({ length: count }, (_, index) => sceneCycle[index % sceneCycle.length]);
@@ -44,10 +45,14 @@ export async function applyShotMode(api) {
       photos: presets.map(sceneArt),
     });
   } else {
+    const editorLayout = layout === 'finale-nine' ? 'finale' :
+      Object.hasOwn(panelCounts, layout) ? layout : 'keyart';
+    const presets = SCENES[editorLayout] || Array.from(
+      { length: panelCounts[editorLayout] }, (_, index) => sceneCycle[index % sceneCycle.length]);
     api.setState({
-      layout: 'finale', grade, title, subtitle,
-      photos: SCENES.finale.map(sceneArt),
-      selectedPanel: 4,
+      layout: editorLayout, grade, title, subtitle,
+      photos: presets.map(sceneArt),
+      selectedPanel: editorLayout === 'keyart' ? 0 : Math.min(4, presets.length - 1),
     });
   }
 

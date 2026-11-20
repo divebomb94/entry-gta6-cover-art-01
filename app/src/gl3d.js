@@ -113,7 +113,7 @@ export function cylinder(rTop, rBottom, h, radialSegs=20, openEnded=false) {
   }
   return finish(g);
 }
-export function sphere(r, wSegs=26, hSegs=19) {
+export function sphere(r, wSegs=30, hSegs=22) {
   const g=mesh(), w=segments(wSegs,3), h=segments(hSegs,2);
   for (let i=0; i<=h; i++) for (let j=0; j<=w; j++) {
     const v=i/h, u=j/w, phi=v*Math.PI, theta=u*TAU;
@@ -127,7 +127,7 @@ export function sphere(r, wSegs=26, hSegs=19) {
   }
   return finish(g);
 }
-export function lathe(profile, segs=28) {
+export function lathe(profile, segs=32) {
   // Profile runs bottom to top; negative radii are unsupported. Ends remain open.
   const g=mesh(), n=segments(segs,3), count=profile.length;
   if (count<2) return finish(g);
@@ -217,6 +217,13 @@ export function disc(r, segs=32) {
   return finish(g);
 }
 
+// Horizontal mesh for node(blobShadow(radius, opacity), null, { p: [x, y, z] }).
+// Place it slightly above the ground. Scale X/Z independently for an ellipse.
+export function blobShadow(radius, opacity=0.35) {
+  return { ...xform(disc(radius), { r: [-Math.PI/2,0,0] }),
+    shadowOpacity:Math.max(0,Math.min(1,opacity)) };
+}
+
 export function xform(geo, opts={}) {
   const p=opts.p || [0,0,0], r=opts.r || [0,0,0];
   const scale=opts.s ?? 1, s=typeof scale==='number' ? [scale,scale,scale] : scale;
@@ -243,7 +250,7 @@ export function xform(geo, opts={}) {
     ]);
     normals.set(normal,i);
   }
-  return {positions,normals,uvs:new Float32Array(geo.uvs),
+  return {...geo,positions,normals,uvs:new Float32Array(geo.uvs),
     colors:geo.colors ? new Float32Array(geo.colors) : null,indices:new Uint16Array(geo.indices)};
 }
 export function merge(geos) {
@@ -267,6 +274,11 @@ export function node(geometry=null, material=null, opts={}) {
 }
 export function group(opts={}) { return node(null,null,opts); }
 
+// Base color stays independently adjustable through the optional material fields.
+export function emissiveMaterial(color, intensity=1, options={}) {
+  return { color:[0,0,0], unlit:true, ...options, emissive:color, emissiveIntensity:intensity };
+}
+
 const VERTEX = `
 attribute vec3 aPosition;
 attribute vec3 aNormal;
@@ -275,10 +287,10 @@ attribute vec3 aColor;
 uniform mat4 uWorld;
 uniform mat4 uViewProjection;
 uniform mat3 uNormalMatrix;
-varying vec3 vNormal;
-varying vec3 vPosition;
-varying vec2 vUV;
-varying vec3 vColor;
+varying mediump vec3 vNormal;
+varying mediump vec3 vPosition;
+varying mediump vec2 vUV;
+varying mediump vec3 vColor;
 void main() {
   vec4 world = uWorld * vec4(aPosition, 1.0);
   vPosition = world.xyz;
@@ -288,17 +300,47 @@ void main() {
   gl_Position = uViewProjection * world;
 }`;
 const FRAGMENT = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
 precision mediump float;
-varying vec3 vNormal;
-varying vec3 vPosition;
-varying vec2 vUV;
-varying vec3 vColor;
+#endif
+varying mediump vec3 vNormal;
+varying mediump vec3 vPosition;
+varying mediump vec2 vUV;
+varying mediump vec3 vColor;
 uniform vec3 uEye, uLightDir, uLightColor, uSkyColor, uGroundColor;
 uniform vec3 uRimColor, uFogColor, uColor, uEmissive;
 uniform float uAmbient, uFogDensity, uAlpha, uBand, uRimBoost, uWrap, uSpecMul;
+uniform float uShininess, uExposure, uFilmFinish, uShadowOpacity;
+uniform vec2 uInvViewport;
 uniform bool uHasTexture, uVertexColors, uUnlit;
 uniform sampler2D uTexture;
+float peak(vec3 color) {
+  return max(color.r, max(color.g, color.b));
+}
+vec3 filmic(vec3 color) {
+  // Drive the ACES shoulder from the brightest channel to preserve neon hue.
+  float level = peak(color);
+  float x = min(level, 16.0);
+  float mapped = (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14);
+  // Blend in a softer toe for the dark pigments in the authored palette.
+  mapped = mix(mapped, x, 0.38 * (1.0 - smoothstep(0.0, 0.18, x)));
+  return color * (clamp(mapped, 0.0, 1.0) / max(level, 0.0001));
+}
+float grain(vec2 pixel) {
+  // Small operands keep the hash usable on mediump-only WebGL1 devices.
+  vec2 cell = mod(pixel, 251.0);
+  vec3 p = fract(cell.xyx * vec3(0.1031, 0.11369, 0.13787));
+  p += dot(p, p.yzx + 5.17);
+  return fract((p.x + p.y) * p.z) - 0.5;
+}
 void main() {
+  if (uShadowOpacity >= 0.0) {
+    float falloff = 1.0 - smoothstep(0.0, 1.0, length(vUV * 2.0 - 1.0));
+    gl_FragColor = vec4(0.018, 0.009, 0.026, uShadowOpacity * falloff * falloff);
+    return;
+  }
   vec4 texel = vec4(1.0);
   if (uHasTexture) texel = texture2D(uTexture, vUV);
   vec3 base = uColor * texel.rgb;
@@ -316,16 +358,30 @@ void main() {
     }
     vec3 hemi = mix(uGroundColor, uSkyColor, n.y * 0.5 + 0.5);
     vec3 halfDir = normalize(uLightDir + viewDir);
-    float spec = pow(max(dot(n, halfDir), 0.0), 24.0) * 0.25 * uSpecMul;
-    spec *= step(0.0001, dot(n, uLightDir));
-    float rim = pow(1.0 - abs(dot(n, viewDir)), 3.0) * uRimBoost;
-    result = base * (hemi * uAmbient + uLightColor * diffuse)
+    float spec = pow(max(dot(n, halfDir), 0.0), uShininess) * 0.25 * uSpecMul;
+    spec *= smoothstep(0.0, 0.25, nd);
+    float rim = pow(1.0 - clamp(abs(dot(n, viewDir)), 0.0, 1.0), 3.0)
+              * mix(0.32, 0.11, diffuse) * uRimBoost;
+    result = base * (vec3(0.09) + hemi * uAmbient + uLightColor * diffuse)
            + uLightColor * spec + uRimColor * rim;
   }
   result += uEmissive;
   float fog = 1.0 - exp(-uFogDensity * length(uEye - vPosition));
   result = mix(result, uFogColor, clamp(fog, 0.0, 1.0));
-  gl_FragColor = vec4(result, texel.a * uAlpha);
+  result = max(result * uExposure, vec3(0.0));
+  if (uFilmFinish > 0.0) {
+    // Single-pass halation approximation: a warm lift at the highlight shoulder.
+    float highlight = smoothstep(0.68, 1.9, peak(result));
+    result += vec3(0.10, 0.022, 0.006) * highlight * uFilmFinish;
+  }
+  result = filmic(result);
+  if (uFilmFinish > 0.0) {
+    vec2 frame = gl_FragCoord.xy * uInvViewport * 2.0 - 1.0;
+    float vignette = smoothstep(0.28, 1.8, dot(frame, frame));
+    result *= 1.0 - 0.12 * vignette * uFilmFinish;
+    result += result * grain(floor(gl_FragCoord.xy)) * 0.055 * uFilmFinish;
+  }
+  gl_FragColor = vec4(clamp(result, 0.0, 1.0), texel.a * uAlpha);
 }`;
 
 // GL resources belong to a context; geometry/material caches live inside each renderer.
@@ -354,7 +410,8 @@ function programFor(gl) {
     attributes[name]=gl.getAttribLocation(program,`a${name}`);
   for (const name of ['World','ViewProjection','NormalMatrix','Eye','LightDir','LightColor',
     'SkyColor','GroundColor','RimColor','FogColor','Color','Emissive','Ambient','FogDensity',
-    'Alpha','Band','RimBoost','Wrap','SpecMul','HasTexture','VertexColors','Unlit','Texture'])
+    'Alpha','Band','RimBoost','Wrap','SpecMul','Shininess','Exposure','FilmFinish',
+    'InvViewport','ShadowOpacity','HasTexture','VertexColors','Unlit','Texture'])
     uniforms[name]=gl.getUniformLocation(program,`u${name}`);
   const result={program,attributes,uniforms};
   programs.set(gl,result);
@@ -423,14 +480,18 @@ export function createRenderer(canvas) {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.uniformMatrix4fv(u.ViewProjection,false,new Float32Array(mat4Multiply(projection,view)));
     const vec=(key,value)=>gl.uniform3fv(u[key],value);
-    vec('Eye',eye); vec('LightDir',unit(env.lightDir || [-0.5,0.8,0.6]));
-    vec('LightColor',env.lightColor || [1,0.85,0.7]);
-    vec('SkyColor',env.skyColor || [0.4,0.6,1]);
-    vec('GroundColor',env.groundColor || [0.4,0.15,0.3]);
-    vec('RimColor',env.rimColor || [1,0.2,0.6]);
+    vec('Eye',eye); vec('LightDir',unit(env.lightDir || [-0.65,0.55,0.6]));
+    vec('LightColor',env.lightColor || [1.12,0.84,0.64]);
+    vec('SkyColor',env.skyColor || [0.27,0.70,0.88]);
+    vec('GroundColor',env.groundColor || [0.48,0.22,0.50]);
+    vec('RimColor',env.rimColor || [1,0.35,0.68]);
     vec('FogColor',env.fogColor || [0.65,0.3,0.6]);
     gl.uniform1f(u.Ambient,env.ambient ?? 0.65);
     gl.uniform1f(u.FogDensity,Math.max(0,env.fogDensity ?? 0));
+    // Exposure is a multiplier. Film finish accepts false or a strength from 0 to 1.
+    gl.uniform1f(u.Exposure,Math.max(0,env.exposure ?? 1.2));
+    gl.uniform1f(u.FilmFinish,Math.max(0,Math.min(1,env.filmFinish ?? 0.65)));
+    gl.uniform2f(u.InvViewport,1/Math.max(1,canvas.width),1/Math.max(1,canvas.height));
     gl.activeTexture(gl.TEXTURE0); gl.uniform1i(u.Texture,0);
     const opaque=[], transparent=[];
     function visit(n,parent) {
@@ -445,7 +506,8 @@ export function createRenderer(canvas) {
         const material=n.material || {};
         const entry={geometry:n.geometry,material,world};
         // Alpha-bearing textures can request this pass with transparent:true.
-        (material.alpha < 1 || material.transparent ? transparent : opaque).push(entry);
+        (n.geometry.shadowOpacity != null || material.alpha < 1 || material.transparent
+          ? transparent : opaque).push(entry);
       }
       for (const child of n.children || []) visit(child,world);
     }
@@ -470,10 +532,14 @@ export function createRenderer(canvas) {
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,b.Index);
       gl.uniformMatrix4fv(u.World,false,new Float32Array(world));
       gl.uniformMatrix3fv(u.NormalMatrix,false,normalMatrix(world));
-      vec('Color',m.color || [1,1,1]); vec('Emissive',m.emissive || [0,0,0]);
+      const emission=m.emissive || [0,0,0], intensity=Math.max(0,m.emissiveIntensity ?? 1);
+      vec('Color',m.color || [1,1,1]);
+      gl.uniform3f(u.Emissive,emission[0]*intensity,emission[1]*intensity,emission[2]*intensity);
+      gl.uniform1f(u.ShadowOpacity,geometry.shadowOpacity ?? -1);
       gl.uniform1f(u.Alpha,m.alpha ?? 1); gl.uniform1f(u.Band,m.band ?? 0);
       gl.uniform1f(u.RimBoost,m.rimBoost ?? 1);
-      gl.uniform1f(u.Wrap,m.wrap ?? 0); gl.uniform1f(u.SpecMul,m.specMul ?? 1);
+      gl.uniform1f(u.Wrap,m.wrap ?? 0); gl.uniform1f(u.SpecMul,m.specularStrength ?? m.specMul ?? 1);
+      gl.uniform1f(u.Shininess,Math.max(1,m.shininess ?? 24));
       gl.uniform1i(u.Unlit,!!m.unlit); gl.uniform1i(u.VertexColors,!!m.vertexColors);
       gl.uniform1i(u.HasTexture,!!m.tex);
       if (m.tex) textureFor(m);

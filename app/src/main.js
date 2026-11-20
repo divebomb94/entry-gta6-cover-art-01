@@ -1,4 +1,4 @@
-import { LAYOUTS, GRADES, drawCover } from './cover.js';
+import { LAYOUTS, GRADES, drawCover, getLayoutPanels } from './cover.js';
 import { listScenes } from './duo3d.js';
 
 const byId = id => document.getElementById(id);
@@ -7,7 +7,24 @@ const ctx = canvas.getContext('2d');
 const statusLine = byId('statusLine');
 const sizeSelect = byId('sizeSelect');
 const thumbStrip = byId('thumbStrip');
-const layoutButtons = [...byId('layoutGrid').querySelectorAll('[data-layout]')];
+const layoutGrid = byId('layoutGrid');
+const existingLayouts = new Map([...layoutGrid.querySelectorAll('[data-layout]')].map(
+  button => [button.dataset.layout === 'finale-nine' ? 'finale' : button.dataset.layout, button],
+));
+layoutGrid.replaceChildren(...LAYOUTS.map(layout => {
+  if (existingLayouts.has(layout.key)) return existingLayouts.get(layout.key);
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'layoutBtn';
+  button.dataset.layout = layout.key;
+  button.setAttribute('aria-pressed', 'false');
+  const diagram = document.createElement('span');
+  diagram.className = 'layout-diagram';
+  diagram.setAttribute('aria-hidden', 'true');
+  button.append(diagram, document.createTextNode(layout.label));
+  return button;
+}));
+const layoutButtons = [...layoutGrid.querySelectorAll('[data-layout]')];
 const gradeButtons = [...byId('gradeRow').querySelectorAll('[data-grade]')];
 const lettering = {
   title: byId('titleInput'),
@@ -25,7 +42,7 @@ const badgeInputs = {
 const SCALE = 2;
 const layouts = new Map(LAYOUTS.map(layout => [layout.key, layout]));
 const grades = new Set(GRADES.map(grade => grade.key));
-// The Finale button uses a different key from the renderer.
+// Preserve links and integrations using the original Finale picker key.
 const layoutKey = key => key === 'finale-nine' ? 'finale' : key;
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const readBadges = () => Object.fromEntries(
@@ -33,7 +50,7 @@ const readBadges = () => Object.fromEntries(
 );
 
 const state = {
-  layout: 'hero-slash',
+  layout: 'keyart',
   grade: 'sunset',
   title: lettering.title.value,
   subtitle: lettering.subtitle.value,
@@ -41,13 +58,15 @@ const state = {
   titleStyle: lettering.titleStyle.value,
   badges: readBadges(),
   library: [],
-  assignments: new Map([['hero-slash', new Map([[0, { art: 'scene:duo', focusX: .5, focusY: .5, zoom: 1 }]])]]),
+  assignments: new Map([['keyart', new Map(LAYOUTS.find(layout => layout.key === 'keyart').scenes.map(
+    (preset, index) => [index, { art: 'scene:' + preset, focusX: .5, focusY: .5, zoom: 1 }],
+  ))]]),
   selectedPanel: 0,
 };
 
 let [width, height] = sizeSelect.value.split('x').map(Number);
 let pendingFrame = null;
-const panels = () => layouts.get(state.layout).panels;
+const panels = () => getLayoutPanels(layouts.get(state.layout), width, height);
 const photoById = id => state.library.find(photo => photo.id === id);
 const thumbnailButtons = new Map();
 const sceneLabels = new Map(listScenes().map(({ key, label }) => ['scene:' + key, label]));

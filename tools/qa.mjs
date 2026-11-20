@@ -61,7 +61,8 @@ async function captureShot(shot) {
       }
     });
 
-    await page.goto(origin + shot.query, { waitUntil: 'load' });
+    const query = shot.query.replace('layout=duo-slash', 'layout=keyart');
+    await page.goto(origin + query + '&caption=%20&sub=%20', { waitUntil: 'load' });
     await page.waitForFunction(() => window.__shotReady === true, { timeout: 30000 });
     await delay(700);
 

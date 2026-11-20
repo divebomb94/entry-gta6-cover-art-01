@@ -164,7 +164,40 @@ export const LAYOUTS = [
       rect(.725,.725,.25,.25),
     ],
   },
+  {
+    key: 'keyart', label: 'Key Art',
+    panels: keyArtPanels(1),
+    scenes: ['closeup', 'duo-action', 'car', 'boat', 'city'],
+  },
 ];
+
+// Shared with editor hit testing. All panels tile the art area exactly; the
+// inset supplies paper gutters without slanted edges cropping fitted heads.
+function keyArtPanels(aspect) {
+  const top = aspect < .9 ? .29 : .32;
+  const bottom = .88;
+  const h = bottom - top;
+  if (aspect < .9) {
+    const split = top + h * .58;
+    const row = (bottom - split) / 2;
+    return [rect(.018, top, .964, split - top),
+      rect(.018, split, .48, row), rect(.498, split, .484, row),
+      rect(.018, split + row, .48, row), rect(.498, split + row, .484, row)];
+  }
+  const hero = aspect > 1.35 ? .57 : .59;
+  const side = (.982 - hero) / 2;
+  // A taller action shot and a shallow city strip make the side asymmetric.
+  const split = top + h * .56;
+  return [rect(.018, top, hero - .018, h),
+    rect(hero, top, side, split - top),
+    rect(hero, split, side, bottom - split),
+    rect(hero + side, split, side, bottom - split),
+    rect(hero + side, top, side, split - top)];
+}
+
+export function getLayoutPanels(layout, W, H) {
+  return layout.key === 'keyart' ? keyArtPanels(W / H) : layout.panels;
+}
 
 function panelPoints(shape, W, H) {
   const points = shape.type === 'rect'
@@ -516,6 +549,98 @@ function roundedBox(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+function keyArtLettering(ctx, W, H, state, grade) {
+  const unit = Math.min(W, H);
+  const top = W / H < .9 ? .29 : .32;
+  const strip = top - .046;
+  ctx.save();
+  ctx.fillStyle = INK;
+  ctx.fillRect(0, 0, W, top * H);
+  // A hard clip also contains the neon halo within the dedicated title band.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(W * .018, H * .012, W * .964, H * (strip - .024));
+  ctx.clip();
+  const caption = String(state.caption ?? state.title ?? 'VICE HEAT').trim().toUpperCase();
+  const words = caption.split(/\s+/).filter(Boolean);
+  const mid = Math.ceil(words.length / 2);
+  const lines = words.length > 1
+    ? [words.slice(0, mid).join(' '), words.slice(mid).join(' ')] : [caption];
+  const row = H * (strip - .042) / lines.length;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  lines.forEach((line, index) => {
+    let size = row * 1.15;
+    ctx.font = `${size}px ${FONT}`;
+    size *= Math.min(1, W * .88 / Math.max(1, ctx.measureText(line).width));
+    ctx.font = `${size}px ${FONT}`;
+    const metrics = ctx.measureText(line);
+    const ascent = metrics.actualBoundingBoxAscent ?? size * .8;
+    const descent = metrics.actualBoundingBoxDescent ?? size * .2;
+    const y = H * .02 + index * row + (row - ascent - descent) / 2 + ascent;
+    // A wide display cut gives the stacked lockup weight on landscape covers
+    // while retaining Anton's silhouette and the same safe vertical metrics.
+    ctx.save();
+    ctx.translate(W / 2, 0);
+    ctx.scale(clamp(W * .78 / Math.max(1, metrics.width), 1, 2), 1);
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = unit * .012;
+    ctx.strokeStyle = '#f642ac';
+    ctx.shadowColor = '#ff2bae';
+    ctx.shadowBlur = unit * .018;
+    ctx.strokeText(line, 0, y);
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = unit * .007;
+    ctx.strokeText(line, 0, y);
+    ctx.fillStyle = verticalGradient(ctx, y - ascent, y,
+      [PAPER, grade.highlight, '#ff7ea7']);
+    ctx.fillText(line, 0, y);
+    ctx.restore();
+  });
+  ctx.restore();
+  ctx.fillStyle = grade.highlight;
+  ctx.fillRect(W * .018, H * strip, W * .964, H * .036);
+  ctx.fillStyle = INK;
+  ctx.textBaseline = 'middle';
+  ctx.font = `700 ${H * .019}px sans-serif`;
+  trackedText(ctx, String(state.subtitle ?? '').toUpperCase(), W / 2,
+    H * (strip + .018), unit * .004, W * .88);
+
+  // Footer furniture never covers an image, even in the narrowest aspect.
+  ctx.fillStyle = INK;
+  ctx.fillRect(0, H * .888, W, H * .112);
+  const chip = Math.min(H * .078, W * .12);
+  const x = W * .028;
+  const y = H * .944;
+  ctx.fillStyle = PAPER;
+  ctx.fillRect(x, y - chip / 2, chip * .86, chip);
+  ctx.fillStyle = INK;
+  ctx.textAlign = 'center';
+  ctx.font = `${chip * .57}px ${FONT}`;
+  ctx.fillText('18', x + chip * .43, y - chip * .06);
+  ctx.font = `700 ${chip * .115}px sans-serif`;
+  ctx.fillText('MATURE', x + chip * .43, y + chip * .33);
+  const radius = Math.min(H * .046, W * .095);
+  const bx = W * .972 - radius;
+  trace(ctx, Array.from({ length: 40 }, (_, i) => {
+    const angle = i / 40 * TAU - Math.PI / 2;
+    const r = radius * (i % 2 ? .83 : 1);
+    return [bx + Math.cos(angle) * r, y + Math.sin(angle) * r];
+  }));
+  ctx.fillStyle = grade.highlight;
+  ctx.fill();
+  ctx.fillStyle = INK;
+  ctx.font = `${radius * .37}px ${FONT}`;
+  ctx.fillText('WORLD', bx, y - radius * .18);
+  ctx.font = `${radius * .30}px ${FONT}`;
+  ctx.fillText('PREMIERE', bx, y + radius * .23);
+  ctx.fillStyle = PAPER;
+  ctx.font = `700 ${unit * .013}px sans-serif`;
+  trackedText(ctx, 'VICE HEAT STUDIO', W / 2, y, unit * .0035, W * .46);
+  ctx.restore();
+}
+
 function ratingBadge(ctx, W, H, s) {
   const x = W * .055;
   const y = H - 143 * s;
@@ -741,8 +866,9 @@ export function drawCover(ctx, W, H, state = {}) {
   const layout = LAYOUTS.find(item => item.key === state.layout) || LAYOUTS[0];
   const grade = GRADES.find(item => item.key === state.grade) || GRADES[0];
   const photos = state.photos || [];
-  const shapes = layout.panels.map(shape =>
-    insetPolygon(panelPoints(shape, W, H), 3 * s));
+  const keyart = layout.key === 'keyart';
+  const shapes = getLayoutPanels(layout, W, H).map(shape =>
+    insetPolygon(panelPoints(shape, W, H), keyart ? Math.min(W, H) * .003 : 3 * s));
   ctx.save();
   try {
     // Establish a clean pixel coordinate system and preserve the caller's state.
@@ -758,15 +884,23 @@ export function drawCover(ctx, W, H, state = {}) {
     ctx.beginPath();
     ctx.rect(0, 0, W, H);
     ctx.clip();
-    atmosphere(ctx, W, H, grade, s);
+    if (keyart) {
+      ctx.fillStyle = PAPER;
+      ctx.fillRect(0, 0, W, H);
+    } else atmosphere(ctx, W, H, grade, s);
     shapes.forEach((points, index) => {
-      drawPanel(ctx, points, photos[index], grade, index, s);
+      const entry = photos[index] || (keyart ? { art: 'scene:' + layout.scenes[index] } : null);
+      drawPanel(ctx, points, entry, grade, index, s);
     });
-    // All borders follow all images so adjoining crops cannot paint over glow.
-    shapes.forEach(points => panelEdge(ctx, points, grade, s));
-    lettering(ctx, W, H, state, grade, s);
-    badges(ctx, W, H, state.badges || {}, grade, s);
-    finish(ctx, W, H, grade, s);
+    if (keyart) {
+      keyArtLettering(ctx, W, H, state, grade);
+    } else {
+      // Borders follow all images so adjoining crops cannot paint over glow.
+      shapes.forEach(points => panelEdge(ctx, points, grade, s));
+      lettering(ctx, W, H, state, grade, s);
+      badges(ctx, W, H, state.badges || {}, grade, s);
+      finish(ctx, W, H, grade, s);
+    }
   } finally {
     ctx.restore();
   }
