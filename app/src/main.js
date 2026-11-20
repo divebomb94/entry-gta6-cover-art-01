@@ -1,5 +1,6 @@
-import { LAYOUTS, GRADES, drawCover, getLayoutPanels } from './cover.js';
+import { LAYOUTS, GRADES, drawCover, getLayoutPanels, SAMPLE_HEADS } from './cover.js';
 import { listScenes } from './duo3d.js';
+import { SAMPLES } from './samples.js';
 
 const byId = id => document.getElementById(id);
 const canvas = byId('coverCanvas');
@@ -25,6 +26,8 @@ layoutGrid.replaceChildren(...LAYOUTS.map(layout => {
   return button;
 }));
 const layoutButtons = [...layoutGrid.querySelectorAll('[data-layout]')];
+const liveBadge = document.querySelector('.live-badge');
+if (liveBadge) liveBadge.textContent = `${LAYOUTS.length} layouts · ${GRADES.length} grades · 3 export sizes`;
 const gradeButtons = [...byId('gradeRow').querySelectorAll('[data-grade]')];
 const lettering = {
   title: byId('titleInput'),
@@ -50,7 +53,7 @@ const readBadges = () => Object.fromEntries(
 );
 
 const state = {
-  layout: 'keyart',
+  layout: 'keyart-photo',
   grade: 'sunset',
   title: lettering.title.value,
   subtitle: lettering.subtitle.value,
@@ -66,7 +69,8 @@ const state = {
 
 let [width, height] = sizeSelect.value.split('x').map(Number);
 let pendingFrame = null;
-const panels = () => getLayoutPanels(layouts.get(state.layout), width, height);
+const panels = () => getLayoutPanels(layouts.get(state.layout), width, height,
+  [...assignments().values()].some(entry => entry.photoId || entry.img));
 const photoById = id => state.library.find(photo => photo.id === id);
 const thumbnailButtons = new Map();
 const sceneLabels = new Map(listScenes().map(({ key, label }) => ['scene:' + key, label]));
@@ -77,7 +81,9 @@ function assignments(key = state.layout) {
 }
 
 function makeAssignment(photoId) {
-  return { focusX: .5, focusY: .5, zoom: 1, photoId };
+  const photo = photoById(photoId);
+  return { focusX: photo?.focal?.x ?? .5, focusY: photo?.focal?.y ?? .5,
+    zoom: 1, photoId, sampleId: photo?.sampleId, headBounds: photo?.headBounds };
 }
 
 function selectedAssignment() {
@@ -134,8 +140,8 @@ function setSize(w, h) {
 
 let nextPhotoId = 1;
 
-async function addPhoto(blob, name) {
-  const url = URL.createObjectURL(blob);
+async function addPhoto(blob, name, sample = null) {
+  const url = sample ? new URL(sample.src, document.baseURI).href : URL.createObjectURL(blob);
   const img = new Image();
   try {
     await new Promise((resolve, reject) => {
@@ -144,10 +150,11 @@ async function addPhoto(blob, name) {
       img.src = url;
     });
   } finally {
-    URL.revokeObjectURL(url);
+    if (!sample) URL.revokeObjectURL(url);
   }
 
-  const photo = { id: nextPhotoId++, name, img };
+  const photo = { id: sample ? `sample:${sample.id}` : nextPhotoId++, name, img,
+    sampleId: sample?.id, focal: sample?.focal, headBounds: SAMPLE_HEADS[sample?.id] };
   state.library.push(photo);
   const button = document.createElement('button');
   button.type = 'button';
@@ -156,6 +163,7 @@ async function addPhoto(blob, name) {
   button.setAttribute('aria-pressed', 'false');
   img.alt = '';
   img.draggable = false;
+  if (sample) img.style.objectPosition = `${sample.focal.x * 100}% ${sample.focal.y * 100}%`;
   button.append(img);
   button.addEventListener('click', () => assignPhoto(photo.id));
   thumbStrip.append(button);
@@ -164,7 +172,7 @@ async function addPhoto(blob, name) {
 }
 
 function firstEmptyPanel(key = state.layout) {
-  return layouts.get(key).panels.findIndex((_, index) => !assignments(key).has(index));
+  return getLayoutPanels(layouts.get(key), width, height).findIndex((_, index) => !assignments(key).has(index));
 }
 
 function assignPhoto(id, index = state.selectedPanel) {
@@ -457,7 +465,7 @@ for (const input of Object.values(badgeInputs)) {
 sizeSelect.addEventListener('change', () => setSize(...sizeSelect.value.split('x').map(Number)));
 
 async function exportCover() {
-  await displayFont;
+  await Promise.all([displayFont, sampleReady]);
   render();
   const filename = `vice-heat-cover-${state.layout}-${width}x${height}.png`;
   // Resolve the 2× render into the requested output size before encoding.
@@ -484,7 +492,18 @@ byId('exportBtn').addEventListener('click', () => exportCover().catch(showError)
 import { applyShotMode } from './shots.js';
 
 const displayFont = document.fonts.load('120px Anton').catch(() => {});
-const api = { setState, render, setSize };
+const samplePhotos = () => layouts.get('keyart-photo').samples.map(id => makeAssignment(`sample:${id}`));
+const sampleReady = (async () => {
+  for (const sample of SAMPLES) await addPhoto(null, sample.label, sample);
+  const defaults = assignments('keyart-photo');
+  samplePhotos().forEach((entry, index) => {
+    if (!defaults.has(index)) defaults.set(index, entry);
+  });
+  showSelection();
+  queueRender();
+})();
+// Shot mode shares the editor's decoded library and focal metadata.
+const api = { setState, render, setSize, samplePhotos, ready: sampleReady };
 window.__viceHeat = api;
 setSize(width, height);
 syncControls();
@@ -498,5 +517,5 @@ if (shot === 'cover' || shot === 'editor') {
     showError(error);
   });
 } else {
-  displayFont.then(render);
+  Promise.all([displayFont, sampleReady]).then(render).catch(showError);
 }

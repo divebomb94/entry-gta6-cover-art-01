@@ -2,7 +2,7 @@ const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
 const panelCounts = {
   'hero-slash': 4, triptych: 3, quad: 4, shards: 5, 'cover-lines': 3,
   'duo-slash': 2, 'big-top': 4, 'l-frame': 4, 'mosaic-6': 6,
-  spotlight: 5, 'twin-towers': 3, finale: 9, keyart: 5,
+  spotlight: 5, 'twin-towers': 3, finale: 9, keyart: 5, 'keyart-photo': 7,
 };
 const SCENES = {
   keyart: ['closeup', 'duo-action', 'car', 'boat', 'city'],
@@ -27,13 +27,14 @@ export async function applyShotMode(api) {
   const title = query.get('caption');
   const subtitle = query.get('sub');
   window.__shotReady = false;
+  await api.ready;
 
   if (mode === 'cover') {
     document.body.classList.add('shot-cover');
     const w = Number(query.get('w'));
     const h = Number(query.get('h'));
     api.setSize(w || 1920, h || 1080);
-    const coverLayout = layout === 'finale-nine' ? 'finale' : layout || 'keyart';
+    const coverLayout = layout === 'finale-nine' ? 'finale' : layout || 'keyart-photo';
     const count = Object.hasOwn(panelCounts, coverLayout) ? panelCounts[coverLayout] : 1;
     let presets = Object.hasOwn(SCENES, coverLayout) ? SCENES[coverLayout] :
       Array.from({ length: count }, (_, index) => sceneCycle[index % sceneCycle.length]);
@@ -42,17 +43,17 @@ export async function applyShotMode(api) {
       layout: coverLayout, grade, title, subtitle,
       titleStyle: 'stacked',
       badges: { rating: true, premiere: true, barcode: true, palm: true },
-      photos: presets.map(sceneArt),
+      photos: coverLayout === 'keyart-photo' ? api.samplePhotos() : presets.map(sceneArt),
     });
   } else {
     const editorLayout = layout === 'finale-nine' ? 'finale' :
-      Object.hasOwn(panelCounts, layout) ? layout : 'keyart';
+      Object.hasOwn(panelCounts, layout) ? layout : 'keyart-photo';
     const presets = SCENES[editorLayout] || Array.from(
       { length: panelCounts[editorLayout] }, (_, index) => sceneCycle[index % sceneCycle.length]);
     api.setState({
       layout: editorLayout, grade, title, subtitle,
-      photos: presets.map(sceneArt),
-      selectedPanel: editorLayout === 'keyart' ? 0 : Math.min(4, presets.length - 1),
+      photos: editorLayout === 'keyart-photo' ? api.samplePhotos() : presets.map(sceneArt),
+      selectedPanel: editorLayout.startsWith('keyart') ? 0 : Math.min(4, presets.length - 1),
     });
   }
 

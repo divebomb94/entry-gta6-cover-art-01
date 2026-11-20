@@ -169,7 +169,45 @@ export const LAYOUTS = [
     panels: keyArtPanels(1),
     scenes: ['closeup', 'duo-action', 'car', 'boat', 'city'],
   },
+  {
+    key: 'keyart-photo', label: 'Key Art Photo',
+    panels: keyArtPhotoPanels(1),
+    samples: ['duo', 'woman', 'man', 'car', 'boat', 'boulevard', 'heli'],
+  },
 ];
+
+// Bounds enclose complete heads (both heads for the duo), including hair.
+// Keep this metadata with assignments so drag/zoom cannot lose a sample face.
+export const SAMPLE_HEADS = {
+  duo: [.13, .065, .79, .64],
+  woman: [.25, .33, .74, .60],
+  man: [.43, .23, .94, .55],
+};
+
+function keyArtPhotoPanels(aspect) {
+  const top = aspect < .9 ? .29 : .32;
+  const h = .88 - top;
+  const row = (x, y, w, height) => rect(.018 + x * .964, top + y * h,
+    w * .964, height * h);
+  if (aspect > 1.35) {
+    return [row(0, 0, .54, .74),
+      row(.54, 0, .155, .37), row(.54, .37, .155, .37),
+      row(0, .74, .3475, .26), row(.3475, .74, .3475, .26),
+      row(.695, .5, .305, .5), row(.695, 0, .305, .5)];
+  }
+  if (aspect < .9) {
+    return [row(0, 0, 1, .54),
+      row(0, .54, .63, .31), row(.63, .54, .37, .31),
+      row(0, .85, .5, .09), row(.5, .85, .5, .09),
+      row(0, .94, .5, .06), row(.5, .94, .5, .06)];
+  }
+  // Portraits span both grid rows; the four landscape action photos occupy
+  // the remaining two columns. This avoids squeezing heads into short tiles.
+  return [row(0, 0, 1, .71),
+    row(0, .71, .20, .29), row(.20, .71, .20, .29),
+    row(.40, .71, .30, .145), row(.70, .71, .30, .145),
+    row(.40, .855, .30, .145), row(.70, .855, .30, .145)];
+}
 
 // Shared with editor hit testing. All panels tile the art area exactly; the
 // inset supplies paper gutters without slanted edges cropping fitted heads.
@@ -195,8 +233,15 @@ function keyArtPanels(aspect) {
     rect(hero + side, top, side, split - top)];
 }
 
-export function getLayoutPanels(layout, W, H) {
-  return layout.key === 'keyart' ? keyArtPanels(W / H) : layout.panels;
+export function getLayoutPanels(layout, W, H, photoLayout = false) {
+  if (layout.key === 'keyart-photo') return keyArtPhotoPanels(W / H);
+  if (layout.key === 'keyart') return keyArtPanels(W / H);
+  if (!photoLayout) return layout.panels;
+  const top = W / H < .9 ? .29 : .32;
+  const y = value => top + (value - .025) / .95 * (.88 - top);
+  return layout.panels.map(shape => shape.type === 'rect'
+    ? rect(shape.x, y(shape.y), shape.w, shape.h / .95 * (.88 - top))
+    : poly(...shape.points.map(([x, py]) => [x, y(py)])));
 }
 
 function panelPoints(shape, W, H) {
@@ -331,33 +376,66 @@ function placeholder(ctx, box, grade, index, s) {
   ctx.restore();
 }
 
-function photoPlacement(entry, box) {
+function photoPlacement(entry, box, safeBox = box) {
   const img = entry?.img;
   const iw = img?.naturalWidth || img?.videoWidth || img?.width;
   const ih = img?.naturalHeight || img?.videoHeight || img?.height;
   if (!(iw > 0 && ih > 0)) return null;
   const zoom = clamp(finite(entry.zoom, 1), 1, 12);
-  const fit = Math.max(box.w / iw, box.h / ih) * zoom;
+  let fit = Math.max(box.w / iw, box.h / ih) * zoom;
+  const head = entry.headBounds || SAMPLE_HEADS[entry.sampleId];
+  const margin = Math.min(safeBox.w, safeBox.h) * .045;
+  // Ordinary focal cover-fit first. For an impossibly shallow/narrow panel,
+  // cap the scale to protect the whole head; extend only the source's outer
+  // edge pixels below instead of clipping hair or introducing empty gutters.
+  if (head) fit = Math.min(fit,
+    (safeBox.w - margin * 2) / ((head[2] - head[0]) * iw),
+    (safeBox.h - margin * 2) / ((head[3] - head[1]) * ih));
   const w = iw * fit;
   const h = ih * fit;
   const fx = clamp(finite(entry.focusX, .5), 0, 1);
   const fy = clamp(finite(entry.focusY, .5), 0, 1);
-  // Position the focus in the centre, clamped so the crop has no empty edge.
-  return { img, w, h,
-    x: box.x + clamp(box.w / 2 - fx * w, box.w - w, 0),
-    y: box.y + clamp(box.h / 2 - fy * h, box.h - h, 0) };
+  let x = box.x + clamp(box.w / 2 - fx * w, Math.min(0, box.w - w), Math.max(0, box.w - w));
+  let y = box.y + clamp(box.h / 2 - fy * h, Math.min(0, box.h - h), Math.max(0, box.h - h));
+  if (head) {
+    x = clamp(x, safeBox.x + margin - head[0] * w,
+      safeBox.x + safeBox.w - margin - head[2] * w);
+    y = clamp(y, safeBox.y + margin - head[1] * h,
+      safeBox.y + safeBox.h - margin - head[3] * h);
+  }
+  return { img, w, h, x, y, iw, ih };
 }
 
 function gradedPhoto(ctx, placement, box, grade) {
-  const { img, x, y, w, h } = placement;
-  ctx.drawImage(img, x, y, w, h);
+  const { img, x, y, w, h, iw, ih } = placement;
+  const draw = () => {
+    // Nine-slice edge extension is normally zero width/height. It is only
+    // needed when full-head safety and strict cover-fit cannot both hold.
+    const xs = [box.x, clamp(x, box.x, box.x + box.w),
+      clamp(x + w, box.x, box.x + box.w), box.x + box.w];
+    const ys = [box.y, clamp(y, box.y, box.y + box.h),
+      clamp(y + h, box.y, box.y + box.h), box.y + box.h];
+    for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) {
+      if (row === 1 && col === 1) continue;
+      const dw = xs[col + 1] - xs[col], dh = ys[row + 1] - ys[row];
+      if (dw <= 0 || dh <= 0) continue;
+      const sx = col === 0 ? 0 : col === 2 ? iw - 1 : clamp((xs[1] - x) / w * iw, 0, iw - 1);
+      const sy = row === 0 ? 0 : row === 2 ? ih - 1 : clamp((ys[1] - y) / h * ih, 0, ih - 1);
+      ctx.drawImage(img, sx, sy,
+        col === 1 ? Math.min(iw - sx, dw / w * iw) : 1,
+        row === 1 ? Math.min(ih - sy, dh / h * ih) : 1,
+        xs[col], ys[row], dw, dh);
+    }
+    ctx.drawImage(img, x, y, w, h);
+  };
+  draw();
   // A second draw replaces the base when filters are supported. Some canvas
   // hosts expose a filter property but reject assignment, hence the guard.
   ctx.save();
   try {
     if ('filter' in ctx) {
       ctx.filter = `saturate(${grade.saturation}) contrast(${grade.contrast})`;
-      ctx.drawImage(img, x, y, w, h);
+      draw();
     }
   } catch { /* The unfiltered photograph is already present. */ }
   ctx.restore();
@@ -371,6 +449,31 @@ function gradedPhoto(ctx, placement, box, grade) {
   ctx.fillRect(box.x, box.y, box.w, box.h);
   ctx.restore();
   halftone(ctx, box, 1, .11, true);
+}
+
+// A conservative interior rectangle also protects heads in slanted panels.
+function headSafeBox(points, box) {
+  const inside = (x, y) => {
+    let hit = false;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+      const [ax, ay] = points[i], [bx, by] = points[j];
+      if ((ay > y) !== (by > y) && x < (bx - ax) * (y - ay) / (by - ay) + ax) hit = !hit;
+    }
+    return hit;
+  };
+  let best = null;
+  for (let cy = 1; cy < 8; cy++) for (let cx = 1; cx < 8; cx++) {
+    const x = box.x + box.w * cx / 8, y = box.y + box.h * cy / 8;
+    for (let k = 8; k > 0; k--) {
+      const w = box.w * k / 9, h = box.h * k / 9;
+      if (best && w * h <= best.w * best.h) break;
+      if ([-.5, 0, .5].every(dx => [-.5, 0, .5].every(dy => inside(x + dx * w, y + dy * h)))) {
+        best = { x: x - w / 2, y: y - h / 2, w, h };
+        break;
+      }
+    }
+  }
+  return best || box;
 }
 
 function drawPanel(ctx, points, entry, grade, index, s) {
@@ -387,7 +490,11 @@ function drawPanel(ctx, points, entry, grade, index, s) {
       drawn = true;
     }
   }
-  const placement = drawn ? null : photoPlacement(entry, box);
+  const rectangular = points.length === 4 && points.every((p, i) =>
+    Math.abs(p[0] - points[(i + 1) % 4][0]) < 1e-6 ||
+    Math.abs(p[1] - points[(i + 1) % 4][1]) < 1e-6);
+  const safeBox = entry?.img && !rectangular ? headSafeBox(points, box) : box;
+  const placement = drawn ? null : photoPlacement(entry, box, safeBox);
   if (placement) {
     try {
       gradedPhoto(ctx, placement, box, grade);
@@ -866,9 +973,13 @@ export function drawCover(ctx, W, H, state = {}) {
   const layout = LAYOUTS.find(item => item.key === state.layout) || LAYOUTS[0];
   const grade = GRADES.find(item => item.key === state.grade) || GRADES[0];
   const photos = state.photos || [];
-  const keyart = layout.key === 'keyart';
-  const shapes = getLayoutPanels(layout, W, H).map(shape =>
-    insetPolygon(panelPoints(shape, W, H), keyart ? Math.min(W, H) * .003 : 3 * s));
+  const keyart = layout.key === 'keyart' || layout.key === 'keyart-photo';
+  const photoLayout = !keyart && photos.some(entry => entry?.img);
+  const banded = keyart || photoLayout;
+  const shapes = getLayoutPanels(layout, W, H, photoLayout).map(shape => {
+    const points = panelPoints(shape, W, H);
+    return insetPolygon(points, banded ? Math.min(W, H) * .003 : 3 * s);
+  });
   ctx.save();
   try {
     // Establish a clean pixel coordinate system and preserve the caller's state.
@@ -884,15 +995,15 @@ export function drawCover(ctx, W, H, state = {}) {
     ctx.beginPath();
     ctx.rect(0, 0, W, H);
     ctx.clip();
-    if (keyart) {
+    if (banded) {
       ctx.fillStyle = PAPER;
       ctx.fillRect(0, 0, W, H);
     } else atmosphere(ctx, W, H, grade, s);
     shapes.forEach((points, index) => {
-      const entry = photos[index] || (keyart ? { art: 'scene:' + layout.scenes[index] } : null);
+      const entry = photos[index] || (layout.scenes ? { art: 'scene:' + layout.scenes[index] } : null);
       drawPanel(ctx, points, entry, grade, index, s);
     });
-    if (keyart) {
+    if (banded) {
       keyArtLettering(ctx, W, H, state, grade);
     } else {
       // Borders follow all images so adjoining crops cannot paint over glow.

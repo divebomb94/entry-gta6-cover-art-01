@@ -1,6 +1,6 @@
 [
-  { "name": "1-cover.jpg", "query": "?shot=cover&caption=VICE%20HEAT&sub=Sunset%20Heist&layout=keyart&grade=sunset&w=1920&h=1080", "w": 1280, "h": 720 },
-  { "name": "2-editor.jpg", "query": "?shot=editor&caption=Duo%20Heat&layout=keyart&grade=sunset", "w": 1280, "h": 720 },
-  { "name": "3-portrait.jpg", "query": "?shot=cover&caption=NEON%20COAST&sub=After%20Dark&layout=keyart&grade=neon&w=1080&h=1350", "w": 1024, "h": 1280 },
-  { "name": "4-square.jpg", "query": "?shot=cover&caption=PALM%20VICE&sub=Golden%20Hour&layout=keyart&grade=golden&w=1080&h=1080", "w": 1080, "h": 1080 }
+  { "name": "1-cover.jpg", "query": "?shot=cover&caption=VICE%20HEAT&sub=Sunset%20Heist&layout=keyart-photo&grade=sunset&w=1920&h=1080", "w": 1280, "h": 720 },
+  { "name": "2-editor.jpg", "query": "?shot=editor&caption=Duo%20Heat&layout=keyart-photo&grade=sunset", "w": 1280, "h": 720 },
+  { "name": "3-portrait.jpg", "query": "?shot=cover&caption=NEON%20COAST&sub=After%20Dark&layout=keyart-photo&grade=neon&w=1080&h=1350", "w": 1024, "h": 1280 },
+  { "name": "4-square.jpg", "query": "?shot=cover&caption=PALM%20VICE&sub=Golden%20Hour&layout=keyart-photo&grade=golden&w=1080&h=1080", "w": 1080, "h": 1080 }
 ]
