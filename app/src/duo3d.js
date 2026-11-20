@@ -8,7 +8,7 @@ const goldSpark = emissiveMaterial([1, 0.80, 0.39], 1.5);
 const fabric = { color: [1, 1, 1], band: 5, rimBoost: 1.1 };
 const MAT = {
   skin: { her: pigment(SKIN.her, 1.2), him: pigment(SKIN.him, 1.2) },
-  lip: { her: pigment([0.63, 0.19, 0.15]), him: pigment([0.38, 0.14, 0.12]) },
+  lip: { her: pigment([0.63, 0.19, 0.15]), him: pigment([0.245, 0.163, 0.131]) },
   hair: { her: pigment([0.11, 0.06, 0.05], 0.6), him: pigment([0.07, 0.05, 0.04], 0.6) },
   gold,
   gunmetal: { color: [0.15, 0.17, 0.22], rimBoost: 1.8 },
@@ -162,13 +162,11 @@ function chestTattooTexture(tone = SKIN.him) {
   return makeCanvas(1024, 1024, ctx => {
     ctx.scale(2, 2);
     paintSkin(ctx, tone);
-    // Front is U = 0.25. Arc-length V and the flipped canvas upload map
-    // chest y=1.392–1.502 to canvas rows ~356–193.
+    // Place the sun at front U = 0.25, above the tank scoop.
     ctx.save();
-    ctx.translate(256, 512 * 0.44);
-    ctx.scale(0.55, 0.55);
-    ctx.translate(-256, -512 * 0.44);
-    ctx.translate(0, 153);
+    ctx.translate(128, 211);
+    ctx.scale(0.46, 0.54);
+    ctx.translate(-128, -106);
     const x = 128;
     const y = 106;
     ctx.fillStyle = TEAL;
@@ -264,11 +262,12 @@ function skinTexture(tone, stubble = false) {
     };
     dots(26, 32, 85, 0.10, 0.12);
     dots(5400, 0.6, 2, 0.24, 0.23);
-    for (let i = 0; i < (stubble ? 3500 : 190); i++) {
+    for (let i = 0; i < (stubble ? 7800 : 190); i++) {
       const x = stubble ? random() * w : (0.14 + random() * 0.22) * w;
-      const y = (stubble ? 0.61 + random() * 0.27 : 0.49 + random() * 0.13) * h;
-      ctx.fillStyle = stubble ? 'rgba(47,29,27,0.20)' : 'rgba(112,54,36,0.24)';
-      ctx.fillRect(x, y, 0.7 + random(), 0.8 + random());
+      const y = (stubble ? 0.62 + random() * 0.26 : 0.49 + random() * 0.13) * h;
+      const density = stubble ? Math.min(1, (y / h - 0.62) * 18, (0.88 - y / h) * 22) : 1;
+      ctx.fillStyle = stubble ? `rgba(49,38,34,${0.57 * density})` : 'rgba(112,54,36,0.24)';
+      ctx.fillRect(x, y, 0.7 + random() * 1.4, 0.8 + random() * 1.4);
     }
   });
 }
@@ -385,15 +384,15 @@ function faceSurface(u, v, strongJaw) {
   const height = Math.cos(v), radial = Math.sin(v);
   const y = height * 0.55;
   const jaw = bump(0, y, 0, -0.32, 1, 0.17);
-  const x = Math.cos(u) * radial * (0.424 + jaw * (strongJaw ? 0.027 : -0.023));
+  const x = Math.cos(u) * radial * (0.424 + jaw * (strongJaw ? 0.084 : -0.023));
   const front = Math.sin(u);
   let z = radial * (front > 0 ? Math.pow(front, 0.54) : front) * 0.428;
   if (front > 0) {
     const a = Math.abs(x);
     z += front ** 2 * (
-      0.067 * bump(x, y, 0, -0.43, 0.18, 0.095) +
+      (strongJaw ? 0.092 : 0.067) * bump(x, y, 0, -0.43, strongJaw ? 0.24 : 0.18, 0.095) +
       0.046 * bump(a, y, 0.237, -0.105, 0.116, 0.084) +
-      0.032 * bump(a, y, 0.158, 0.117, 0.128, 0.047) -
+      (strongJaw ? 0.062 : 0.032) * bump(a, y, 0.158, 0.122, 0.128, 0.047) -
       0.043 * bump(a, y, 0.159, 0.052, 0.084, 0.053) +
       0.046 * bump(x, y, 0, 0.039, 0.042, 0.112) +
       0.111 * bump(x, y, 0, -0.069, 0.052, 0.060) +
@@ -440,11 +439,13 @@ function buildFace({ skin, lip, hair, brow, strongJaw = false }) {
     faceArc(head, eye, samples.map(t => almond(t, 1)), 0.0058);
     faceArc(head, lid, samples.map(t => almond(t, -1)), 0.0057);
     faceArc(head, brow ?? hair, samples.map(t => [x + side * 0.071 * t,
-      0.131 + 0.021 * (1 - (t - 0.17) ** 2), 0.439 - 0.042 * t - 0.016 * t*t]), 0.0087);
+      0.131 + (strongJaw ? 0.008 : 0.021) * (1 - (t - 0.17) ** 2),
+      (strongJaw ? 0.461 : 0.439) - 0.042 * t - 0.016 * t*t]), strongJaw ? 0.014 : 0.0087);
   }
-  part(head, sphere(0.087, 28, 18), lip, [0, -0.242, 0.416], [1.22, 0.23, 0.32]);
-  part(head, sphere(0.077, 28, 18), { ...lip, color: lip.color.map(v => v * 1.13) },
-    [0, -0.267, 0.415], [1.20, 0.29, 0.40]);
+  const mouth = strongJaw ? { ...lip, specMul: 0.17 } : lip;
+  part(head, sphere(0.087, 28, 18), mouth, [0, -0.242, 0.416], [1.22, strongJaw ? 0.16 : 0.23, 0.32]);
+  part(head, sphere(0.077, 28, 18), { ...mouth, color: mouth.color.map(v => v * 1.13) },
+    [0, -0.267, 0.415], [1.20, strongJaw ? 0.19 : 0.29, 0.40]);
   return head;
 }
 
@@ -535,13 +536,14 @@ function mountHead(root, face, y, scale, mountScale) {
 function hairCap(hair, woman) {
   const geo = sculptSphere(64, 30, (u, v) => {
     const front = Math.max(0, Math.sin(u));
-    const end = (woman ? 1.98 : 1.76) - (woman ? 1.05 : 0.89) * front ** 0.65 +
+    const end = (woman ? 1.98 : 1.81) - (woman ? 1.05 : 0.77) * front ** 0.65 +
       0.12 * front * Math.cos(u);
     const phi = v / Math.PI * end;
     const wave = 1 + 0.014 * Math.cos(u * 13 + phi * 4) * Math.sin(phi);
-    return [Math.cos(u) * Math.sin(phi) * (woman ? 0.485 : 0.452) * wave,
-      0.064 + Math.cos(phi) * (woman ? 0.547 : 0.515),
-      -0.023 + Math.sin(u) * Math.sin(phi) * (woman ? 0.52 : 0.49) * wave];
+    const fade = woman ? 1 : 1 - 0.065 * (v / Math.PI) ** 5 * (1 - front);
+    return [Math.cos(u) * Math.sin(phi) * (woman ? 0.555 : 0.505) * wave * fade,
+      0.064 + Math.cos(phi) * (woman ? 0.565 : 0.575),
+      -0.023 + Math.sin(u) * Math.sin(phi) * 0.55 * wave * fade];
   });
   // Open cap: restore the final ring, which sphere topology treats as a pole.
   const indices = Array.from(geo.indices);
@@ -568,10 +570,10 @@ function womanHair(head, hair) {
   const hairTex = texturedHair(hair);
   const cap = hairCap(hairTex, true);
   part(head, cap.geometry, cap.material);
-  const path = [[-0.18, 0.36, -0.31], [-0.38, 0.15, -0.25], [-0.49, -0.13, 0.05],
-    [-0.55, -0.47, 0.31], [-0.57, -0.78, 0.43], [-0.52, -1.08, 0.48]];
+  const path = [[0.29, 0.42, -0.28], [0.49, 0.25, -0.23], [0.58, 0.04, 0.065],
+    [0.59, -0.29, 0.42], [0.61, -0.68, 0.67], [0.61, -1.12, 0.83], [0.53, -1.55, 0.87]];
   part(head, torus(0.12, 0.018), gold, path[0], undefined, [Math.PI / 2, 0, 0]);
-  const radii = [0.11, 0.125, 0.118, 0.102, 0.071, 0.019];
+  const radii = [0.135, 0.156, 0.163, 0.151, 0.136, 0.104, 0.026];
   for (let i = 0; i < path.length - 1; i++) {
     const a = path[i];
     const b = path[i + 1];
@@ -595,11 +597,26 @@ function buildWoman() {
   const dress = { ...MAT.dress, tex: dressTexture() };
   part(hips, lathe([[0.27, -0.42], [0.255, -0.33], [0.230, -0.20], [0.218, -0.08],
     [0.196, 0.0], [0.168, 0.05], [0.160, 0.10]], 40), dress, [0, 0, 0], [1, 1, 0.80]);
-  part(root, lathe([[0.158, 1.00], [0.149, 1.08], [0.132, 1.16], [0.151, 1.24],
-    [0.178, 1.33], [0.199, 1.40], [0.190, 1.45], [0.168, 1.52], [0.128, 1.58],
-    [0.105, 1.615], [0.078, 1.650]], 40), dress, [0, 0, 0], [1, 1, 0.80]);
+  const bodice = [[0.158, 1.00], [0.141, 1.11], [0.127, 1.19], [0.137, 1.27],
+    [0.172, 1.36], [0.200, 1.44], [0.195, 1.50], [0.170, 1.555], [0.119, 1.605],
+    [0.076, 1.650]];
+  const neckline = (u) => 0.072 * Math.max(0, Math.sin(u)) ** 1.4;
+  const dressGeo = lathe(bodice, 64);
+  for (let i = 0; i < dressGeo.positions.length / 3; i++) {
+    const u = dressGeo.uvs[i * 2] * TAU;
+    const level = Math.max(0, (dressGeo.positions[i * 3 + 1] - 1.43) / 0.22);
+    dressGeo.positions[i * 3 + 1] -= neckline(u) * level;
+  }
+  part(root, dressGeo, dress, [0, 0, 0.008], [1, 1, 0.84]);
+  part(root, lathe([[0.181, 1.46], [0.174, 1.52], [0.139, 1.565], [0.074, 1.650]], 48),
+    skin, [0, 0, 0], [1, 1, 0.85]);
+  const binding = lathe([[0.085, 1.636], [0.079, 1.650]], 64);
+  for (let i = 0; i < binding.positions.length / 3; i++) {
+    binding.positions[i * 3 + 1] -= neckline(binding.uvs[i * 2] * TAU);
+  }
+  part(root, binding, pigment([0.71, 0.13, 0.24]), [0, 0, 0.009], [1, 1, 0.85]);
   part(root, cylinder(0.056, 0.072, 0.13), skin, [0, 1.655, 0]);
-  part(root, cylinder(0.065, 0.069, 0.021, 40, true), gold, [0, 1.660, 0]);
+  part(root, cylinder(0.079, 0.085, 0.025, 48, true), gold, [0, 1.656, 0.005]);
   part(root, sphere(0.018), gold, [0, 1.622, 0.080], [0.85, 1.25, 0.62]);
   part(root, sphere(0.0038), goldSpark, [-0.009, 1.661, 0.066]);
   part(root, sphere(0.0033), goldSpark, [0.004, 1.628, 0.091]);
@@ -607,9 +624,9 @@ function buildWoman() {
   mountHead(root, head, 1.740, 0.96, 0.238);
   womanHair(head, hair);
   for (const side of [-1, 1]) {
-    part(head, torus(0.035, 0.008), gold, [side * 0.461, -0.091, 0.025],
-      [0.86, 1.18, 1], [0, side * 0.45, 0]);
-    part(head, sphere(0.010), goldSpark, [side * 0.469, -0.115, 0.042]);
+    part(head, torus(0.061, 0.011), gold, [side * 0.479, -0.139, 0.064],
+      [0.84, 1.18, 1], [0, side * 0.30, 0]);
+    part(head, sphere(0.012), goldSpark, [side * 0.489, -0.203, 0.079]);
   }
   const sleeve = { ...fabric, rimBoost: 1.2, tex: sleeveTattooTexture(SKIN.her) };
   const armR = makeArm(root, [-0.215, 1.565, 0], 0.070, [0.27, 0.25], skin, sleeve);
@@ -638,16 +655,16 @@ function shirtTexture() {
 
 function shirtPanel(side) {
   // The inner edge hangs open; the outer edge curves around the ribs.
-  const rings = [[1.10, 0.158, 0.219, 0.105], [1.23, 0.134, 0.218, 0.136],
-    [1.37, 0.136, 0.256, 0.162], [1.52, 0.137, 0.282, 0.188],
-    [1.62, 0.105, 0.288, 0.173], [1.665, 0.115, 0.254, 0.129]];
+  const rings = [[1.10, 0.149, 0.219, 0.133], [1.23, 0.157, 0.219, 0.122],
+    [1.37, 0.174, 0.250, 0.148], [1.52, 0.180, 0.278, 0.161],
+    [1.62, 0.158, 0.288, 0.169], [1.67, 0.132, 0.248, 0.134]];
   const positions = [], normals = [], uvs = [], indices = [];
   for (let i = 0; i < rings.length; i++) for (let j = 0; j <= 12; j++) {
     const [y, inner, outer, z] = rings[i], t = j / 12;
     const wave = Math.sin(t * TAU * 2.2 + y * 8);
     const fold = 0.010 * wave * Math.sin(t * Math.PI);
-    positions.push(side * (inner + (outer - inner) * t), y, z - 0.135 * t ** 1.8 + fold);
-    const nx = side * (0.6 * t + 0.075 * wave);
+    positions.push(side * (inner + (outer - inner) * t), y, z - 0.106 * t ** 1.5 + fold);
+    const nx = side * (0.74 * t + 0.12 * wave);
     normals.push(nx, 0, Math.sqrt(1 - nx * nx));
     uvs.push(t, i / (rings.length - 1));
     if (i && j) {
@@ -672,16 +689,31 @@ function buildMan() {
     [0, 0, 0], [1, 1, 0.76]);
   part(hips, box(0.070, 0.042, 0.016), gold, [0, 0.02, 0.181]);
   part(hips, box(0.045, 0.023, 0.008), belt, [0, 0.02, 0.191]);
-  const tank = { ...MAT.tank, tex: tankTexture() };
+  const tank = { ...MAT.tank, tex: tankTexture(), band: 0, specMul: 0.22 };
   const chest = { ...fabric, rimBoost: 1.2, tex: chestTattooTexture() };
-  part(root, lathe([[0.212, 1.03], [0.200, 1.12], [0.198, 1.22], [0.228, 1.34],
-    [0.252, 1.43], [0.258, 1.48]], 40), tank, [0, 0, 0], [1, 1, 0.77]);
-  part(root, lathe([[0.252, 1.46], [0.262, 1.52], [0.266, 1.58], [0.258, 1.63],
-    [0.228, 1.665], [0.110, 1.685], [0.095, 1.700], [0.082, 1.725]], 40), chest, [0, 0, 0], [1, 1, 0.77]);
+  const chestProfile = [[0.228, 1.34], [0.252, 1.43], [0.262, 1.52], [0.266, 1.58],
+    [0.258, 1.63], [0.228, 1.665], [0.110, 1.685], [0.095, 1.700], [0.082, 1.725]];
+  part(root, lathe(chestProfile, 64), chest, [0, 0, 0], [1, 1, 0.77]);
+  const tankGeo = lathe([[0.212, 1.03], [0.200, 1.12], [0.198, 1.22],
+    ...chestProfile.slice(0, 3), [0.262, 1.53], [0.263, 1.54]], 64);
+  for (let i = 0; i < tankGeo.positions.length / 3; i++) {
+    const k = 3 * i, u = tankGeo.uvs[i * 2] * TAU;
+    const y = tankGeo.positions[k + 1];
+    const scoop = 0.084 * Math.abs(Math.cos(u)) ** 1.6 * Math.max(0, (y - 1.43) / 0.11);
+    const height = y + scoop;
+    const segment = chestProfile.findIndex(([, level]) => level >= height);
+    let r = Math.hypot(tankGeo.positions[k], tankGeo.positions[k + 2]);
+    if (segment > 0) {
+      const [a, low] = chestProfile[segment - 1], [b, high] = chestProfile[segment];
+      r = a + (b - a) * (height - low) / (high - low);
+    }
+    tankGeo.positions.set([(r + 0.006) * Math.cos(u), height, (r + 0.006) * Math.sin(u)], k);
+  }
+  part(root, tankGeo, tank, [0, 0, 0], [1, 1, 0.77]);
   const shirt = { ...MAT.shirt, color: [1, 1, 1], tex: shirtTexture(), band: 0, specMul: 0.3 };
   for (const side of [-1, 1]) {
     part(root, shirtPanel(side), shirt);
-    part(root, sphere(0.103), shirt, [side * 0.253, 1.602, 0], [1.10, 0.82, 1.31]);
+    part(root, sphere(0.096), shirt, [side * 0.254, 1.606, 0.008], [1.01, 0.78, 1.04]);
   }
   part(root, cylinder(0.075, 0.095, 0.14), skin, [0, 1.715, 0]);
   const head = buildFace({ skin: faceSkin.him, lip: MAT.lip.him, hair, brow: hair, strongJaw: true });
@@ -763,12 +795,17 @@ function poseAction(woman, man) {
 }
 
 function poseCloseup(woman, man) {
-  woman.root.p = [-0.156, 0, 0.07];
-  woman.root.r = [0, 0.30, 0];
-  woman.joints.head.r = [-0.025, -0.40, -0.035];
-  man.root.p = [0.167, 0.019, -0.065];
-  man.root.r = [0, -0.32, 0];
-  man.joints.head.r = [0.028, 0.45, 0.025];
+  woman.root.p = [-0.177, 0.021, 0.07];
+  woman.root.r = [0, 0.23, 0];
+  woman.joints.head.r = [-0.025, -0.28, -0.035];
+  woman.joints.armR.sh.r = [-0.32, 0, 0.34];
+  woman.joints.armR.el.r = [-0.16, 0, 0.36];
+  for (const mesh of woman.joints.armR.sh.children) {
+    if (mesh.geometry) mesh.fitBust = true;
+  }
+  man.root.p = [0.179, 0.019, -0.087];
+  man.root.r = [0, -0.12, 0];
+  man.joints.head.r = [0.028, 0.22, 0.025];
 }
 
 function addContactShadows(scene, ...characters) {
@@ -1208,7 +1245,7 @@ function seaplane() {
 const CAMERAS = {
   duo: { pos: [0, 1.30, 4.9], target: [0, 0.98, 0], fov: 38 },
   'duo-action': { pos: [0, 1.25, 4.2], target: [0, 1, 0], fov: 40 },
-  closeup: { pos: [0, 1.775, 0.77], target: [0, 1.770, 0], fov: 34, near: 0.04 },
+  closeup: { pos: [-0.035, 1.69, 0.94], target: [-0.035, 1.67, 0], fov: 34, near: 0.04 },
   'qa-her': { pos: [0, 1.70, 1.45], target: [0, 1.62, 0], fov: 36 },
   'qa-him': { pos: [0, 1.82, 1.50], target: [0, 1.74, 0], fov: 36 },
   'qa-duo': { pos: [0, 1.45, 3.05], target: [0, 1.22, 0], fov: 37 },
@@ -1326,7 +1363,7 @@ function framedCamera(root, base, aspect) {
     m = mat4RotateX(m, n.r[0]); m = mat4RotateY(m, n.r[1]); m = mat4RotateZ(m, n.r[2]);
     m = mat4Scale(m, ...(typeof n.s === 'number' ? [n.s, n.s, n.s] : n.s));
     m = mat4Multiply(parent, m);
-    if (n.geometry && (inHead || !root.fitHeads)) for (let i = 0; i < n.geometry.positions.length; i += 3) {
+    if (n.geometry && (inHead || !root.fitHeads || n.fitBust)) for (let i = 0; i < n.geometry.positions.length; i += 3) {
       const p = transformPoint(m, ...n.geometry.positions.subarray(i, i + 3));
       points.push([...transformPoint(view, ...p), inHead]);
     }
