@@ -61,6 +61,14 @@ export async function applyShotMode(api) {
   if (mode === 'editor') document.body.style.zoom = '0.62';
   await nextFrame();
   await nextFrame();
+  if (mode === 'editor') {
+    // Fit the preview without moving the header or the taller control rail.
+    const overflow = document.getElementById('stageWrap').getBoundingClientRect().bottom
+      - window.innerHeight + 24;
+    if (overflow > 0) {
+      document.querySelector('.stage').style.transform = `translateY(${-overflow / 0.62}px)`;
+    }
+  }
   await new Promise(resolve => setTimeout(resolve, 250));
   if (mode === 'cover') document.title = 'shot-ready';
   window.__shotReady = true;
