@@ -196,10 +196,10 @@ function keyArtPhotoPanels(aspect) {
       row(.695, .5, .305, .5), row(.695, 0, .305, .5)];
   }
   if (aspect < .9) {
-    return [row(0, 0, 1, .54),
-      row(0, .54, .63, .31), row(.63, .54, .37, .31),
-      row(0, .85, .5, .09), row(.5, .85, .5, .09),
-      row(0, .94, .5, .06), row(.5, .94, .5, .06)];
+    return [row(0, 0, 1, .36),
+      row(0, .36, .6, .24), row(.6, .36, .4, .24),
+      row(0, .60, .5, .20), row(.5, .60, .5, .20),
+      row(.5, .80, .5, .20), row(0, .80, .5, .20)];
   }
   // Portraits span both grid rows; the four landscape action photos occupy
   // the remaining two columns. This avoids squeezing heads into short tiles.
