@@ -197,10 +197,12 @@ function keyArtPhotoPanels(aspect) {
       row(.695, .5, .305, .5), row(.695, 0, .305, .5)];
   }
   if (aspect < .9) {
-    return [row(0, 0, 1, .38),
-      row(0, .38, .6, .26), row(.6, .38, .4, .26),
-      row(0, .64, .5, .18), row(.5, .64, .5, .18),
-      row(.5, .82, .5, .18), row(0, .82, .5, .18)];
+    const column = 1 / 3;
+    // The full-width duo needs extra height to fit both heads at cover scale.
+    return [row(0, 0, 1, .47),
+      row(0, .47, column, .36), row(column, .47, column, .36),
+      row(2 * column, .47, column, .18), row(2 * column, .65, column, .18),
+      row(.5, .83, .5, .17), row(0, .83, .5, .17)];
   }
   // Portraits span both grid rows; the four landscape action photos occupy
   // the remaining two columns. This avoids squeezing heads into short tiles.
